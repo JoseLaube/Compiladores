@@ -13,5 +13,8 @@ data Token
   | REQ
   | RLE
   | RGE
+  | AND
+  | OR
+  | NOT
   deriving (Eq, Show)
   

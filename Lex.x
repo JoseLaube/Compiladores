@@ -24,6 +24,10 @@ tokens :-
 <0> ">" {\s -> RGT}
 <0> "<" {\s -> RLT}
 <0> "==" {\s -> REQ}
+<0> "&&" {\s -> AND}
+<0> "||" {\s -> OR}
+<0> "!" {\s -> NOT}
+
 
 {
 -- As acoes tem tipo :: String -> Token
