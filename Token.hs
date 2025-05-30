@@ -1,7 +1,8 @@
 module Token where
 
 data Token
-  = NUM Double
+  = NUMI Int -- adicao
+  | NUM Double
   | ADD
   | SUB
   | MUL
@@ -13,8 +14,10 @@ data Token
   | REQ
   | RLE
   | RGE
+  | RDF
   | AND
   | OR
   | NOT
+  | ID String 
   deriving (Eq, Show)
   

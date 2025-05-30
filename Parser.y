@@ -15,6 +15,7 @@ import qualified Lex as L
   '+' {ADD}
   '-' {SUB}
   '*' {MUL}
+  '/=' {RDF}
   '/' {DIV}
   '(' {LPAR}
   ')' {RPAR}
@@ -26,7 +27,9 @@ import qualified Lex as L
   '&&' {AND}
   '||' {OR}
   '!' {NOT}
+  Numi {NUMI $$}
   Num {NUM $$}
+  Id  {ID $$} -- adicao
 
 
 %%
@@ -44,6 +47,7 @@ ExprR : Expr '==' Expr        {Req $1 $3}
       | Expr '<' Expr	  {Rlt $1 $3}
       | Expr '<=' Expr        {Rle $1 $3}
       | Expr '>=' Expr        {Rge $1 $3}
+      | Expr '/=' Expr       {Rdf $1 $3} -- adicionei diferente
 
 Expr  : Expr '+' Term       {Add $1 $3}
       | Expr '-' Term       {Sub $1 $3} 
@@ -53,7 +57,9 @@ Term  : Term  '*' Factor    {Mul $1 $3}
       | Term '/' Factor     {Div $1 $3}
       | Factor              {$1}
 
-Factor : Num                {Const $1}
+Factor : Numi                {Cint $1}
+       | Id                 {IdVar $1}  -- adicao
+       | Num                 {Const $1}
        | '(' Expr ')'       {$2}    
        | '-' Factor         {Neg $2}
        
