@@ -27,6 +27,7 @@ import qualified Lex as L
   '||' {OR}
   '!' {NOT}
   Num {NUM $$}
+  Id  {ID $$} -- adicao
 
 
 %%
@@ -54,6 +55,7 @@ Term  : Term  '*' Factor    {Mul $1 $3}
       | Factor              {$1}
 
 Factor : Num                {Const $1}
+       | Id                 {IdVar $1}  -- adicao
        | '(' Expr ')'       {$2}    
        | '-' Factor         {Neg $2}
        

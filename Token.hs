@@ -16,5 +16,6 @@ data Token
   | AND
   | OR
   | NOT
+  | ID String  -- adicao
   deriving (Eq, Show)
   
