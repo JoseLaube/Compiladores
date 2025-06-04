@@ -27,10 +27,13 @@ data Token
   | KW_INT
   | KW_FLOAT
   | KW_STRING
+  | KW_IF
   | KW_VOID
   | KW_READ       -- Para o comando read()
   | KW_WHILE      -- Para o comando while()
   | KW_PRINT      -- Para o comando print()
+  | KW_RETURN     -- Para o comando return
+  | COMMA         -- Para o elemento ','
   deriving (Eq, Show)
   
 

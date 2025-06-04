@@ -20,8 +20,8 @@ import qualified Lex as L
   ')' {RPAR}
   '{' {LBRACE} 
   '}' {RBRACE} 
-  '=' {EQ_ASSIGN}     -- NOVO TOKEN
-  ';' {SEMI}          -- NOVO TOKEN
+  '=' {EQ_ASSIGN}
+  ';' {SEMI}          
   '<=' {RLE}
   '>=' {RGE}  
   '>' {RGT}
@@ -30,18 +30,20 @@ import qualified Lex as L
   '&&' {AND}
   '||' {OR}
   '!' {NOT}
+  ',' {COMMA}                 -- Adição da virgula
   Num {NUM $$}                -- Para literais Double (ex: 1.0, 0.5)
   IntLit {INT_LIT $$}         -- Para literais Int (ex: 10, 200)
   Id  {ID $$}
   StringLit {STRING_LIT $$}   -- Para literais string (ex: "Ola Mundo!")
-  'int' {KW_INT}
-  'float' {KW_FLOAT}
+  'int'    {KW_INT}
+  'float'  {KW_FLOAT}
   'string' {KW_STRING}
-  'void' {KW_VOID}
-  'read' {KW_READ}
-  'while' {KW_WHILE}
-  'print' {KW_PRINT}
-
+  'void'   {KW_VOID}
+  'read'   {KW_READ}
+  'while'  {KW_WHILE}
+  'print'  {KW_PRINT}
+  'if'     {KW_IF}
+  'return' {KW_RETURN}
 
 %%
 Programa : Bloco                 { Prog $1 } -- Um programa é apenas um Bloco Principal 
@@ -57,12 +59,21 @@ Comando  : 'while' '(' ExprL ')' Bloco     { While $3 $5 }
          | Id '=' Expr ';'                 { Atrib $1 $3 }
          | 'read' '(' Id ')' ';'           { Leitura $3 }
          | 'print' '(' Expr ')' ';'        { Imp $3 }
+         | 'if' '(' ExprL ')' Bloco Bloco  { If $3 $5 $6 } 
+         | 'return' Expr ';'               { Ret (Just $2) }      -- tem que ter just por conta do (Maybe Expr)
+         | 'return' ';'                    { Ret Nothing}
+         | Id '(' ListaArgsExpr ')' ';'    { Proc $1 $3 }         -- id ( ListaArgsExpr ) ;
+         | Id '(' ')' ';'                  { Proc $1 [] }         -- id () ;
+
+-- Não-terminal para a lista de argumentos (expressões)
+ListaArgsExpr : Expr                      { [$1] }            -- Um único argumento
+              | ListaArgsExpr ',' Expr    { $3 : $1 }         -- Lista de argumentos (constrói ao contrário)
 
 ----------------------------------------------------------------------------
 -- regras de expressao permanecem, mas não são o ponto de partida principal
-
-Inico : Expr               {Left $1}  -- Expressao aritmetica
-      | ExprL              {Right $1} -- Expressao relacional ou logica
+-- Inico : Expr               {Left $1}  -- Expressao aritmetica
+--      | ExprL              {Right $1} -- Expressao relacional ou logica
+----------------------------------------------------------------------------
 
 ExprL : ExprL '||' ExprL      { Or $1 $3 }
       | ExprL '&&' ExprL      { And $1 $3 }

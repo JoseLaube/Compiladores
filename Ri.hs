@@ -14,8 +14,8 @@ data ExprL = And ExprL ExprL | Or ExprL ExprL | Not ExprL | Rel ExprR deriving S
 
 -- data Var = Id :#: (Tipo, Int) deriving Show
 
-data Comando = While ExprL Bloco | Leitura Id | Imp Expr | Atrib String Expr deriving Show
-
 type Bloco = [Comando]
 
 data Programa = Prog Bloco deriving Show
+
+data Comando = If ExprL Bloco Bloco | While ExprL Bloco | Leitura Id | Imp Expr | Ret (Maybe Expr) | Proc Id [Expr] | Atrib String Expr deriving Show

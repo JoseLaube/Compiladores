@@ -24,6 +24,8 @@ tokens :-
 <0> "read"      {\s -> KW_READ}
 <0> "while"     {\s -> KW_WHILE}
 <0> "print"     {\s -> KW_PRINT}
+<0> "if"     {\s -> KW_IF}
+<0> "return"    {\s -> KW_RETURN}
 
 <0> @id  {\s -> ID s}
 <0> @num_double {\s -> NUM (read s)}                                        -- Renomeado de @num, retorna NUM Double
@@ -38,10 +40,10 @@ tokens :-
 <0> "/" {\s -> DIV}  
 <0> "(" {\s -> LPAR}  
 <0> ")" {\s -> RPAR} 
-<0> "{" {\s -> LBRACE}    -- NOVO
-<0> "}" {\s -> RBRACE}    -- NOVO
-<0> "=" {\s -> EQ_ASSIGN}  -- NOVO
-<0> ";" {\s -> SEMI}      -- NOVO
+<0> "{" {\s -> LBRACE}
+<0> "}" {\s -> RBRACE}
+<0> "=" {\s -> EQ_ASSIGN}  -- Nova adição
+<0> ";" {\s -> SEMI}      -- Nova adição
 <0> "<=" {\n -> RLE}
 <0> ">=" {\n -> RGE}
 <0> ">" {\s -> RGT}
@@ -50,6 +52,7 @@ tokens :-
 <0> "&&" {\s -> AND}
 <0> "||" {\s -> OR}
 <0> "!" {\s -> NOT}
+<0> "," {\s -> COMMA}    -- Nova adição
 
 
 {
