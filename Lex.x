@@ -11,7 +11,8 @@ $alpha = [a-zA-Z]
 
 @num_double = $digit+ \. $digit+ ($digit+)?
 @num_int    = $digit+
-@id  = $alpha ($alpha | $digit | \_ )*  
+@id  = $alpha ($alpha | $digit | \_ )* 
+@string_lit = \" (~[\"\\] | \\.)* \"
 
 tokens :-
 
@@ -20,9 +21,16 @@ tokens :-
 <0> "float"     {\s -> KW_FLOAT}
 <0> "string"    {\s -> KW_STRING}
 <0> "void"      {\s -> KW_VOID}
-<0> @id  {\s -> ID s}  -- adicao
-<0> @num_double {\s -> NUM (read s)}      -- Renomeado de @num, retorna NUM Double
-<0> @num_int    {\s -> INT_LIT (read s)}   -- Para inteiros, retorna INT_LIT Int
+<0> "read"      {\s -> KW_READ}
+<0> "while"     {\s -> KW_WHILE}
+<0> "print"     {\s -> KW_PRINT}
+
+<0> @id  {\s -> ID s}
+<0> @num_double {\s -> NUM (read s)}                                        -- Renomeado de @num, retorna NUM Double
+<0> @num_int    {\s -> INT_LIT (read s)}                                    -- Para inteiros, retorna INT_LIT Int
+-- <0> @string_lit {\s -> STRING_LIT (drop 1 (take (length s - 1) s)) }     -- lenghth s - 1 retorna a string sem o ultimo elemento, e drop 1 remove o primeiro
+<0> @string_lit {\s -> STRING_LIT (init (tail s)) }                         -- tail remove o ultimo elemento da string e init remove o primeiro
+
 <0> "+" {\s -> ADD}  
 <0> "-" {\s -> SUB}  
 <0> "*" {\s -> MUL}
@@ -30,6 +38,10 @@ tokens :-
 <0> "/" {\s -> DIV}  
 <0> "(" {\s -> LPAR}  
 <0> ")" {\s -> RPAR} 
+<0> "{" {\s -> LBRACE}    -- NOVO
+<0> "}" {\s -> RBRACE}    -- NOVO
+<0> "=" {\s -> EQ_ASSIGN}  -- NOVO
+<0> ";" {\s -> SEMI}      -- NOVO
 <0> "<=" {\n -> RLE}
 <0> ">=" {\n -> RGE}
 <0> ">" {\s -> RGT}

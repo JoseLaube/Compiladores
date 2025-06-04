@@ -7,7 +7,7 @@ import qualified Lex as L
 
 }
 
-%name calc
+%name parsePrograma
 %tokentype { Token }
 %error { parseError }
 %token 
@@ -18,6 +18,10 @@ import qualified Lex as L
   '/' {DIV}
   '(' {LPAR}
   ')' {RPAR}
+  '{' {LBRACE} 
+  '}' {RBRACE} 
+  '=' {EQ_ASSIGN}     -- NOVO TOKEN
+  ';' {SEMI}          -- NOVO TOKEN
   '<=' {RLE}
   '>=' {RGE}  
   '>' {RGT}
@@ -26,15 +30,36 @@ import qualified Lex as L
   '&&' {AND}
   '||' {OR}
   '!' {NOT}
-  Num {NUM $$}          -- Para literais Double (ex: 1.0, 0.5)
-  IntLit {INT_LIT $$}   -- Para literais Int (ex: 10, 200)
+  Num {NUM $$}                -- Para literais Double (ex: 1.0, 0.5)
+  IntLit {INT_LIT $$}         -- Para literais Int (ex: 10, 200)
   Id  {ID $$}
-  KW_INT {KW_INT}
-  KW_FLOAT {KW_FLOAT}
-  KW_STRING {KW_STRING}
-  KW_VOID {KW_VOID}
+  StringLit {STRING_LIT $$}   -- Para literais string (ex: "Ola Mundo!")
+  'int' {KW_INT}
+  'float' {KW_FLOAT}
+  'string' {KW_STRING}
+  'void' {KW_VOID}
+  'read' {KW_READ}
+  'while' {KW_WHILE}
+  'print' {KW_PRINT}
+
 
 %%
+Programa : Bloco                 { Prog $1 } -- Um programa é apenas um Bloco Principal 
+
+Bloco    : '{' ListaCmd '}'         { $2 }
+            | '{' '}'               { [] } -- Bloco vazio (lista vazia de comandos)
+
+ListaCmd    : ListaCmd Comando      { $2 : $1 } -- Constrói ao contrário, reverter se necessário
+            | Comando               { [$1] }
+            |                       { [] }      -- Lista de comandos vazia dentro das chaves
+
+Comando  : 'while' '(' ExprL ')' Bloco     { While $3 $5 }      
+         | Id '=' Expr ';'                 { Atrib $1 $3 }
+         | 'read' '(' Id ')' ';'           { Leitura $3 }
+         | 'print' '(' Expr ')' ';'        { Imp $3 }
+
+----------------------------------------------------------------------------
+-- regras de expressao permanecem, mas não são o ponto de partida principal
 
 Inico : Expr               {Left $1}  -- Expressao aritmetica
       | ExprL              {Right $1} -- Expressao relacional ou logica
@@ -62,19 +87,19 @@ Term  : Term  '*' Factor    {Mul $1 $3}
 
 Factor : Num                { Const (CDouble $1) }
        | IntLit             { Const (CInt $1) }
-       | Id                 {IdVar $1}
-       | '(' Expr ')'       {$2}    
-       | '-' Factor         {Neg $2}
+       | Id                 { IdVar $1 }
+       | StringLit          { Lit $1 }
+       | '(' Expr ')'       { $2 }    
+       | '-' Factor         { Neg $2 }
        
 
 {
 parseError :: [Token] -> a
 parseError s = error ("Parse error:" ++ show s)
 
-main = do putStr "Expressão:"
-          s <- getLine
-          case calc (L.alexScanTokens s) of
-          	Left v -> print v
-          	Right v -> print v
-          	
+main = do
+  putStr "Programa: "
+  s <- getLine
+  let resultado = parsePrograma (L.alexScanTokens s) :: Programa
+  print resultado
 }
