@@ -11,6 +11,8 @@ import qualified Lex as L
 %tokentype { Token }
 %error { parseError }
 %token 
+
+  -- simbolos para expressoes
   '+' {ADD}
   '-' {SUB}
   '*' {MUL}
@@ -30,11 +32,15 @@ import qualified Lex as L
   '&&' {AND}
   '||' {OR}
   '!' {NOT}
-  ',' {COMMA}                 -- Adição da virgula
+  ',' {COMMA}
+
+  -- para tipos
   Num {NUM $$}                -- Para literais Double (ex: 1.0, 0.5)
   IntLit {INT_LIT $$}         -- Para literais Int (ex: 10, 200)
   Id  {ID $$}
   StringLit {STRING_LIT $$}   -- Para literais string (ex: "Ola Mundo!")
+  
+  -- palavras reservadas
   'int'    {KW_INT}
   'float'  {KW_FLOAT}
   'string' {KW_STRING}
@@ -46,28 +52,44 @@ import qualified Lex as L
   'return' {KW_RETURN}
 
 %%
-Programa : Bloco                 { Prog $1 } -- Um programa é apenas um Bloco Principal 
+Programa : BlocoPrincipal    { Prog (fst $1) (snd $1) } -- fst extrai o primeiro componente ([Var]) e snd extrai (Bloco) 
 
-Bloco    : '{' ListaCmd '}'         { $2 }
-            | '{' '}'               { [] } -- Bloco vazio (lista vazia de comandos)
+BlocoPrincipal : '{' Declaracoes ListaCmd '}'   { ($2, $3) }
+               | '{' ListaCmd '}'               { ([], $2 ) }
+ 
+Declaracoes : Declaracoes Declaracao  { $2 ++ $1 }
+            | Declaracao              { $1 }
+            |                         { [] }
 
-ListaCmd    : ListaCmd Comando      { $2 : $1 } -- Constrói ao contrário, reverter se necessário
+Declaracao: Tipo ListaId ';'   { map (\idName -> Variable idName $1) $2 }
+
+Tipo : 'int'         { TInt }
+     | 'float'       { TDouble }
+     | 'string'      { TString }
+
+ListaId  : Id               { [$1] }
+         | ListaId ',' Id   { $3 : $1 }
+
+Bloco : '{' ListaCmd '}'      { $2 }
+      | '{' '}'               { [] }
+
+ListaCmd    : ListaCmd Comando      { $2 : $1 } 
             | Comando               { [$1] }
-            |                       { [] }      -- Lista de comandos vazia dentro das chaves
+            |                       { [] } 
 
 Comando  : 'while' '(' ExprL ')' Bloco     { While $3 $5 }      
          | Id '=' Expr ';'                 { Atrib $1 $3 }
          | 'read' '(' Id ')' ';'           { Leitura $3 }
          | 'print' '(' Expr ')' ';'        { Imp $3 }
          | 'if' '(' ExprL ')' Bloco Bloco  { If $3 $5 $6 } 
-         | 'return' Expr ';'               { Ret (Just $2) }      -- tem que ter just por conta do (Maybe Expr)
+         | 'return' Expr ';'               { Ret (Just $2) }     
          | 'return' ';'                    { Ret Nothing}
-         | Id '(' ListaArgsExpr ')' ';'    { Proc $1 $3 }         -- id ( ListaArgsExpr ) ;
-         | Id '(' ')' ';'                  { Proc $1 [] }         -- id () ;
+         | Id '(' ListaArgsExpr ')' ';'    { Proc $1 $3 }         
+         | Id '(' ')' ';'                  { Proc $1 [] }
 
--- Não-terminal para a lista de argumentos (expressões)
-ListaArgsExpr : Expr                      { [$1] }            -- Um único argumento
-              | ListaArgsExpr ',' Expr    { $3 : $1 }         -- Lista de argumentos (constrói ao contrário)
+
+ListaArgsExpr : Expr                      { [$1] }          
+              | ListaArgsExpr ',' Expr    { $3 : $1 } 
 
 ----------------------------------------------------------------------------
 -- regras de expressao permanecem, mas não são o ponto de partida principal
@@ -86,7 +108,7 @@ ExprR : Expr '==' Expr       {Req $1 $3}
       | Expr '<' Expr	     {Rlt $1 $3}
       | Expr '<=' Expr       {Rle $1 $3}
       | Expr '>=' Expr       {Rge $1 $3}
-      | Expr '/=' Expr       {Rdf $1 $3} -- adicionei diferente
+      | Expr '/=' Expr       {Rdf $1 $3}
 
 Expr  : Expr '+' Term       {Add $1 $3}
       | Expr '-' Term       {Sub $1 $3} 
