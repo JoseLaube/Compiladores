@@ -61,4 +61,3 @@ tokens :-
 testLex = do s <- getLine
              print (alexScanTokens s)
 }
-

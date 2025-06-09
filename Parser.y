@@ -10,7 +10,7 @@ import qualified Lex as L
 %name parsePrograma
 %tokentype { Token }
 %error { parseError }
-%token 
+%token
 
   -- simbolos para expressoes
   '+' {ADD}
@@ -20,12 +20,12 @@ import qualified Lex as L
   '/' {DIV}
   '(' {LPAR}
   ')' {RPAR}
-  '{' {LBRACE} 
-  '}' {RBRACE} 
+  '{' {LBRACE}
+  '}' {RBRACE}
   '=' {EQ_ASSIGN}
-  ';' {SEMI}          
+  ';' {SEMI}
   '<=' {RLE}
-  '>=' {RGE}  
+  '>=' {RGE}
   '>' {RGT}
   '<' {RLT}
   '==' {REQ}
@@ -35,11 +35,11 @@ import qualified Lex as L
   ',' {COMMA}
 
   -- para tipos
-  Num {NUM $$}                -- Para literais Double (ex: 1.0, 0.5)
-  IntLit {INT_LIT $$}         -- Para literais Int (ex: 10, 200)
-  Id  {ID $$}
-  StringLit {STRING_LIT $$}   -- Para literais string (ex: "Ola Mundo!")
-  
+  NUM {NUM $$}
+  INT_LIT {INT_LIT $$}
+  ID  {ID $$}
+  STRING_LIT {STRING_LIT $$}
+
   -- palavras reservadas
   'int'    {KW_INT}
   'float'  {KW_FLOAT}
@@ -52,83 +52,100 @@ import qualified Lex as L
   'return' {KW_RETURN}
 
 %%
-Programa : BlocoPrincipal    { Prog (fst $1) (snd $1) } -- fst extrai o primeiro componente ([Var]) e snd extrai (Bloco) 
 
-BlocoPrincipal : '{' Declaracoes ListaCmd '}'   { ($2, $3) }
-               | '{' ListaCmd '}'               { ([], $2 ) }
- 
-Declaracoes : Declaracoes Declaracao  { $2 ++ $1 }
-            | Declaracao              { $1 }
-            |                         { [] }
+-- LINHA CORRIGIDA AQUI
+Programa : BlocoPrincipal { let (funs, declsList, cmds) = $1 in Prog funs (concat declsList) cmds }
 
-Declaracao: Tipo ListaId ';'   { map (\idName -> Variable idName $1) $2 }
+BlocoPrincipal : '{' OptionalFuncoes OptionalDeclaracoes OptionalListaCmd '}' { ($2, $3, $4) }
 
-Tipo : 'int'         { TInt }
-     | 'float'       { TDouble }
-     | 'string'      { TString }
+-- REGRAS DE LISTA - AGORA COM RECURSÃO À ESQUERDA
+Funcoes : Funcoes Funcao { $1 ++ [$2] } -- Concatena a nova função ao final da lista
+        | Funcao         { [$1] }     -- Caso base: uma única função (convertida para lista)
 
-ListaId  : Id               { [$1] }
-         | ListaId ',' Id   { $3 : $1 }
+Declaracoes : Declaracoes Declaracao { $1 ++ [$2] } -- Concatena a nova declaração ao final da lista
+            | Declaracao             { [$1] }     -- Caso base: uma única declaração (convertida para lista)
 
-Bloco : '{' ListaCmd '}'      { $2 }
-      | '{' '}'               { [] }
+ListaCmd : ListaCmd Comando { $1 ++ [$2] } -- Concatena o novo comando ao final da lista
+         | Comando          { [$1] }     -- Caso base: um único comando (convertido para lista)
 
-ListaCmd    : ListaCmd Comando      { $2 : $1 } 
-            | Comando               { [$1] }
-            |                       { [] } 
+-- NOVAS REGRAS OPCIONAIS (mantidas como antes)
+OptionalFuncoes : Funcoes { $1 }
+                |         { [] }
 
-Comando  : 'while' '(' ExprL ')' Bloco     { While $3 $5 }      
-         | Id '=' Expr ';'                 { Atrib $1 $3 }
-         | 'read' '(' Id ')' ';'           { Leitura $3 }
-         | 'print' '(' Expr ')' ';'        { Imp $3 }
-         | 'if' '(' ExprL ')' Bloco Bloco  { If $3 $5 $6 } 
-         | 'return' Expr ';'               { Ret (Just $2) }     
-         | 'return' ';'                    { Ret Nothing}
-         | Id '(' ListaArgsExpr ')' ';'    { Proc $1 $3 }         
-         | Id '(' ')' ';'                  { Proc $1 [] }
+OptionalDeclaracoes : Declaracoes { $1 }
+                    |             { [] }
 
+OptionalListaCmd : ListaCmd { $1 }
+                 |          { [] }
 
-ListaArgsExpr : Expr                      { [$1] }          
-              | ListaArgsExpr ',' Expr    { $3 : $1 } 
+-- Resto das regras permanecem as mesmas
+Funcao : Tipo ID '(' Parametros ')' Bloco { (:->:) $2 ($4, $1) }
 
-----------------------------------------------------------------------------
--- regras de expressao permanecem, mas não são o ponto de partida principal
--- Inico : Expr               {Left $1}  -- Expressao aritmetica
---      | ExprL              {Right $1} -- Expressao relacional ou logica
-----------------------------------------------------------------------------
+Parametros : ListaParametro { $1 }
+           |                { [] }
 
-ExprL : ExprL '||' ExprL      { Or $1 $3 }
-      | ExprL '&&' ExprL      { And $1 $3 }
-      | '!' ExprL             { Not $2 } 
-      | ExprR                 { Rel $1 }  
-      | '(' ExprL ')'         { $2 }    
+ListaParametro : Parametro              { [$1] }
+               | Parametro ',' ListaParametro { $1 : $3 }
 
-ExprR : Expr '==' Expr       {Req $1 $3}
-      | Expr '>' Expr	     {Rgt $1 $3}
-      | Expr '<' Expr	     {Rlt $1 $3}
-      | Expr '<=' Expr       {Rle $1 $3}
-      | Expr '>=' Expr       {Rge $1 $3}
-      | Expr '/=' Expr       {Rdf $1 $3}
+Parametro : Tipo ID { (:#:) $2 ($1, 0) }
 
-Expr  : Expr '+' Term       {Add $1 $3}
-      | Expr '-' Term       {Sub $1 $3} 
-      | Term                {$1}
+Declaracao : Tipo ListaId ';' { map (\idName -> (:#:) idName ($1, 0)) $2 }
 
-Term  : Term  '*' Factor    {Mul $1 $3}
-      | Term '/' Factor     {Div $1 $3}
-      | Factor              {$1}
+Tipo : 'int'    { TInt }
+     | 'float'  { TDouble }
+     | 'string' { TString }
+     | 'void'   { TVoid }
 
-Factor : Num                { Const (CDouble $1) }
-       | IntLit             { Const (CInt $1) }
-       | Id                 { IdVar $1 }
-       | StringLit          { Lit $1 }
-       | '(' Expr ')'       { $2 }    
-       | '-' Factor         { Neg $2 }
-       
+ListaId : ID ',' ListaId    { $1 : $3 }
+        | ID                { [$1] }
+
+Bloco : '{' ListaCmd '}' { $2 }
+      | '{' '}'          { [] }
+
+Comando : 'while' '(' ExprL ')' Bloco        { While $3 $5 }
+        | ID '=' Expr ';'                    { Atrib $1 $3 }
+        | 'read' '(' ID ')' ';'              { Leitura $3 }
+        | 'print' '(' Expr ')' ';'           { Imp $3 }
+        | 'if' '(' ExprL ')' Bloco Bloco     { If $3 $5 $6 }
+        | 'return' Expr ';'                  { Ret (Just $2) }
+        | 'return' ';'                       { Ret Nothing }
+        | ID '(' ListaArgsExpr ')' ';'       { Proc $1 $3 }
+        | ID '(' ')' ';'                     { Proc $1 [] }
+
+ListaArgsExpr : Expr                { [$1] }
+              | Expr ',' ListaArgsExpr { $1 : $3 }
+
+ExprL : ExprL '||' ExprL { Or $1 $3 }
+      | ExprL '&&' ExprL { And $1 $3 }
+      | '!' ExprL        { Not $2 }
+      | ExprR            { Rel $1 }
+      | '(' ExprL ')'    { $2 }
+
+ExprR : Expr '==' Expr {Req $1 $3}
+      | Expr '>' Expr  {Rgt $1 $3}
+      | Expr '<' Expr  {Rlt $1 $3}
+      | Expr '<=' Expr {Rle $1 $3}
+      | Expr '>=' Expr {Rge $1 $3}
+      | Expr '/=' Expr {Rdf $1 $3}
+
+Expr  : Expr '+' Term  {Add $1 $3}
+      | Expr '-' Term  {Sub $1 $3}
+      | Term           {$1}
+
+Term  : Term '*' Factor {Mul $1 $3}
+      | Term '/' Factor {Div $1 $3}
+      | Factor          {$1}
+
+Factor : NUM           { Const (CDouble $1) }
+       | INT_LIT       { Const (CInt $1) }
+       | ID            { IdVar $1 }
+       | STRING_LIT    { Lit $1 }
+       | '(' Expr ')'  { $2 }
+       | '-' Factor    { Neg $2 }
 
 {
 parseError :: [Token] -> a
-parseError s = error ("Parse error:" ++ show s)
+parseError s = error ("Parse error: " ++ show s)
 
 main = do
   putStr "Programa: "

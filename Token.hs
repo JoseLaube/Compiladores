@@ -36,4 +36,3 @@ data Token
   | COMMA         -- Para o elemento ','
   deriving (Eq, Show)
   
-

@@ -12,10 +12,12 @@ data ExprR = Rgt Expr Expr | Rdf Expr Expr | Rlt Expr Expr | Req Expr Expr | Rle
 
 data ExprL = And ExprL ExprL | Or ExprL ExprL | Not ExprL | Rel ExprR deriving Show
 
-data Var = Variable Id Tipo deriving Show
+data Var = Id :#: (Tipo, Int) deriving Show
+
+data Funcao = Id :->: ([Var], Tipo) deriving Show
 
 type Bloco = [Comando]
 
-data Programa = Prog [Var] Bloco deriving Show
+data Programa = Prog [Funcao] [Var] Bloco deriving Show
 
 data Comando = If ExprL Bloco Bloco | While ExprL Bloco | Leitura Id | Imp Expr | Ret (Maybe Expr) | Proc Id [Expr] | Atrib String Expr deriving Show
