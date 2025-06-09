@@ -28,6 +28,7 @@ data Token
   | KW_FLOAT
   | KW_STRING
   | KW_IF
+  | KW_ELSE
   | KW_VOID
   | KW_READ       -- Para o comando read()
   | KW_WHILE      -- Para o comando while()

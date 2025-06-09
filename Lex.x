@@ -7,11 +7,11 @@ import Token
 %wrapper "basic"
 
 $digit = [0-9]        -- digits
-$alpha = [a-zA-Z] 
+$alpha = [a-zA-Z]
 
 @num_double = $digit+ \. $digit+ ($digit+)?
 @num_int    = $digit+
-@id  = $alpha ($alpha | $digit | \_ )* 
+@id  = $alpha ($alpha | $digit | \_ )*
 @string_lit = \" (~[\"\\] | \\.)* \"
 
 tokens :-
@@ -24,7 +24,8 @@ tokens :-
 <0> "read"      {\s -> KW_READ}
 <0> "while"     {\s -> KW_WHILE}
 <0> "print"     {\s -> KW_PRINT}
-<0> "if"     {\s -> KW_IF}
+<0> "if"        {\s -> KW_IF}
+<0> "else"      {\s -> KW_ELSE}
 <0> "return"    {\s -> KW_RETURN}
 
 <0> @id  {\s -> ID s}
@@ -33,13 +34,13 @@ tokens :-
 -- <0> @string_lit {\s -> STRING_LIT (drop 1 (take (length s - 1) s)) }     -- lenghth s - 1 retorna a string sem o ultimo elemento, e drop 1 remove o primeiro
 <0> @string_lit {\s -> STRING_LIT (init (tail s)) }                         -- tail remove o ultimo elemento da string e init remove o primeiro
 
-<0> "+" {\s -> ADD}  
-<0> "-" {\s -> SUB}  
+<0> "+" {\s -> ADD}
+<0> "-" {\s -> SUB}
 <0> "*" {\s -> MUL}
 <0> "/=" {\s -> RDF}
-<0> "/" {\s -> DIV}  
-<0> "(" {\s -> LPAR}  
-<0> ")" {\s -> RPAR} 
+<0> "/" {\s -> DIV}
+<0> "(" {\s -> LPAR}
+<0> ")" {\s -> RPAR}
 <0> "{" {\s -> LBRACE}
 <0> "}" {\s -> RBRACE}
 <0> "=" {\s -> EQ_ASSIGN}  -- Nova adição

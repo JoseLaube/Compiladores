@@ -1,0 +1,97 @@
+-- TESTE 1:
+
+int soma(int a, int b) {
+  return a + b;
+}
+
+{ // Bloco Principal do Programa
+  // vazio  
+}
+
+LINHA DE COMANDO PARA O MAIN:
+
+int soma(int a, int b){return a + b;} {}
+
+int soma(int a, int b){if(0 == 0){}} {}
+
+int soma(int a, int b){if(0 == 0){}else{print(a);}} {}
+-------------------------------------------------------------------------------------------------
+
+-- TESTE 2:
+
+int soma(int a, int b) {
+ return a + b;
+}
+
+{ // Bloco Principal do Programa
+ int resultado;
+ resultado = soma(10,5);
+ print(15);
+}
+
+LINHA DE COMANDO PARA O MAIN:
+
+int soma(int a, int b){return a + b;} {int resultado; resultado = soma(10, 5); print(15); }
+
+-------------------------------------------------------------------------------------------------
+
+-- TESTE 3:
+
+void saudacao(string nome) {
+    print("Ola, ");
+    print(nome);
+    print("!");
+}
+
+int adiciona(int x, int y) {
+    return x + y;
+}
+
+{
+    string meuNome;
+    int val1, val2;
+    int somaTotal;
+
+    meuNome = "Mundo";
+    val1 = 10;
+    val2 = 25;
+
+    saudacao(meuNome);
+    somaTotal = adiciona(val1, val2);
+    print(somaTotal);
+    adiciona(5,3);
+}
+
+LINHA DE COMANDO PARA O MAIN:
+
+void saudacao(string nome){ print("Ola, "); print(nome); print("!"); } int adiciona(int x, int y) { return x + y; } { string meuNome; int val1, val2; int somaTotal; meuNome = "Mundo"; val1 = 10; val2 = 25; saudacao(meuNome); somaTotal = adiciona(val1, val2); print(somaTotal); adiciona(5,3); }
+
+
+-------------------------------------------------------------------------------------------------
+
+-- TESTE 4:
+
+int dobro(int n) {
+    return n * 2;
+}
+
+int somaDobros(int a, int b) {
+    int dobroA, dobroB;
+    dobroA = dobro(a); // Chamada de função em expressão
+    dobroB = dobro(b); // Chamada de função em expressão
+    return dobroA + dobroB;
+}
+
+{
+    int x, resultado;
+    x = 5;
+    resultado = somaDobros(x, 10);
+    print(resultado);
+}
+
+LINHA DE COMANDO PARA O MAIN:
+
+
+int dobro(int n){return n*2;} int somaDobros(int a, int b){int dobroA, dobroB; dobroA = dobro(a); dobroB = dobro(b); return dobroA + dobroB;} {int x, resultado; x = 5; resultado = somaDobros(x,10); print(resultado);}
+
+
