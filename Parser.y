@@ -10,37 +10,38 @@ import qualified Lex as L
 %name parsePrograma
 %tokentype { Token }
 %error { parseError }
+
 %token
 
-  -- simbolos para expressoes
-  '+' {ADD}
-  '-' {SUB}
-  '*' {MUL}
+  -- Simbolos para Expressoes
+  '+'  {ADD}
+  '-'  {SUB}
+  '*'  {MUL}
   '/=' {RDF}
-  '/' {DIV}
-  '(' {LPAR}
-  ')' {RPAR}
-  '{' {LBRACE}
-  '}' {RBRACE}
-  '=' {EQ_ASSIGN}
-  ';' {SEMI}
+  '/'  {DIV}
+  '('  {LPAR}
+  ')'  {RPAR}
+  '{'  {LBRACE}
+  '}'  {RBRACE}
+  '='  {EQ_ASSIGN}
+  ';'  {SEMI}
   '<=' {RLE}
   '>=' {RGE}
-  '>' {RGT}
-  '<' {RLT}
+  '>'  {RGT}
+  '<'  {RLT}
   '==' {REQ}
   '&&' {AND}
   '||' {OR}
-  '!' {NOT}
-  ',' {COMMA}
+  '!'  {NOT}
+  ','  {COMMA}
 
-  -- para tipos
-  NUM {NUM $$}                -- Para literais Double (ex: 1.0, 0.5)
-  INT_LIT {INT_LIT $$}         -- Para literais Int (ex: 10, 200)
-  ID  {ID $$}
-  STRING_LIT {STRING_LIT $$}   -- Para literais string (ex: "Ola Mundo!")
+  -- Para Tipos
+  NUM        {NUM $$}          -- Para literais Double (ex: 1.0, 0.5)
+  INT_LIT    {INT_LIT $$}      -- Para literais Int (ex: 10, 200)
+  ID         {ID $$}
+  STRING_LIT {STRING_LIT $$}   -- Para literais string (ex: "Ola Mundo")
   
-  -- palavras reservadas
+  -- Palavras Reservadas
   'int'    {KW_INT}
   'float'  {KW_FLOAT}
   'string' {KW_STRING}
@@ -49,24 +50,24 @@ import qualified Lex as L
   'while'  {KW_WHILE}
   'print'  {KW_PRINT}
   'if'     {KW_IF}
-  'else'     {KW_ELSE}
+  'else'   {KW_ELSE}
   'return' {KW_RETURN}
 
 %%
-Programa : ListaFuncoes BlocoPrincipal    { Prog $1 (fst $2) (snd $2) } -- fst extrai o segundo componente ([Var]) e snd extrai (Bloco)
-         | BlocoPrincipal                 { Prog [] (fst $1) (snd $1) } -- Sem funções
+Programa : ListaFuncoes BlocoPrincipal    { Prog (map fst $1) (map transformaFuncao $1) (fst $2) (snd $2) }
+         | BlocoPrincipal                 { Prog [] [] (fst $1) (snd $1) }
 
-ListaFuncoes : ListaFuncoes Funcao       { $2 : $1 } -- Constrói ao contrário
+ListaFuncoes : ListaFuncoes Funcao       { $1 ++ [$2] }
              | Funcao                    { [$1] }
-             |                           { [] }      -- Retorna uma lista vazia de Funcao
-      
-Funcao : TipoRetorno ID '(' DeclParametros ')' BlocoPrincipal { ($2 :->: ( (reverse $4), $1, (snd $6)) ) }
-       | TipoRetorno ID '(' ')' BlocoPrincipal                { ($2 :->: ( [], $1, (snd $5)) ) }
+             |                           { [] }
+
+Funcao : TipoRetorno ID '(' DeclParametros ')' BlocoPrincipal { ($2 :->: ($4, $1), $6) }
+       | TipoRetorno ID '(' ')' BlocoPrincipal                { ($2 :->: ([], $1), $5) }
 
 TipoRetorno : Tipo    { $1 }
             | 'void'  { TVoid }
 
-DeclParametros : DeclParametros ',' Parametro      { $3 : $1 }
+DeclParametros : DeclParametros ',' Parametro      { $1 ++ [$3] }
                | Parametro                         { [$1] }
                |                                   { [] }
                
@@ -76,25 +77,25 @@ Parametro : Tipo ID   { (:#:) $2 ($1,0) }
 BlocoPrincipal : '{' Declaracoes ListaCmd '}'   { ($2, $3) }
                | '{' ListaCmd '}'               { ([], $2 ) }
  
-Declaracoes : Declaracoes Declaracao  { $2 ++ $1 }
+Declaracoes : Declaracoes Declaracao  { $1 ++ $2 }
             | Declaracao              { $1 }
             |                         { [] }
             
-Declaracao: Tipo ListaID ';'   { map (\idName -> (:#:) idName ($1,0) ) (reverse $2) }
+Declaracao: Tipo ListaID ';'   { map (\idName -> (:#:) idName ($1,0) ) ($2) }
 
 Tipo : 'int'         { TInt }
      | 'float'       { TDouble }
      | 'string'      { TString }
 
-ListaID  : ID               { [$1] }
-         | ListaID ',' ID   { $3 : $1 }
+ListaID : ID               { [$1] }
+        | ListaID ',' ID   { $1 ++ [$3] }
 
 Bloco : '{' ListaCmd '}'      { $2 }
       | '{' '}'               { [] }
 
-ListaCmd    : ListaCmd Comando      { $2 : $1 }
-            | Comando               { [$1] }
-            |                       { [] }
+ListaCmd : ListaCmd Comando      { $1 ++ [$2] }
+         | Comando               { [$1] }
+         |                       { [] }
 
 Comando  : CmdSe                           { $1 }
          | CmdEscrita                      { $1 }

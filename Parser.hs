@@ -826,14 +826,14 @@ happyReduce_1 = happySpecReduce_2  4 happyReduction_1
 happyReduction_1 (HappyAbsSyn10  happy_var_2)
 	(HappyAbsSyn5  happy_var_1)
 	 =  HappyAbsSyn4
-		 (Prog happy_var_1 (fst happy_var_2) (snd happy_var_2)
+		 (Prog (map fst happy_var_1) (map transformaFuncao happy_var_1) (fst happy_var_2) (snd happy_var_2)
 	)
 happyReduction_1 _ _  = notHappyAtAll 
 
 happyReduce_2 = happySpecReduce_1  4 happyReduction_2
 happyReduction_2 (HappyAbsSyn10  happy_var_1)
 	 =  HappyAbsSyn4
-		 (Prog [] (fst happy_var_1) (snd happy_var_1)
+		 (Prog [] [] (fst happy_var_1) (snd happy_var_1)
 	)
 happyReduction_2 _  = notHappyAtAll 
 
@@ -841,7 +841,7 @@ happyReduce_3 = happySpecReduce_2  5 happyReduction_3
 happyReduction_3 (HappyAbsSyn6  happy_var_2)
 	(HappyAbsSyn5  happy_var_1)
 	 =  HappyAbsSyn5
-		 (happy_var_2 : happy_var_1
+		 (happy_var_1 ++ [happy_var_2]
 	)
 happyReduction_3 _ _  = notHappyAtAll 
 
@@ -866,7 +866,7 @@ happyReduction_6 ((HappyAbsSyn10  happy_var_6) `HappyStk`
 	(HappyAbsSyn7  happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn6
-		 ((happy_var_2 :->: ( (reverse happy_var_4), happy_var_1, (snd happy_var_6)) )
+		 ((happy_var_2 :->: (happy_var_4, happy_var_1), happy_var_6)
 	) `HappyStk` happyRest
 
 happyReduce_7 = happyReduce 5 6 happyReduction_7
@@ -877,7 +877,7 @@ happyReduction_7 ((HappyAbsSyn10  happy_var_5) `HappyStk`
 	(HappyAbsSyn7  happy_var_1) `HappyStk`
 	happyRest)
 	 = HappyAbsSyn6
-		 ((happy_var_2 :->: ( [], happy_var_1, (snd happy_var_5)) )
+		 ((happy_var_2 :->: ([], happy_var_1), happy_var_5)
 	) `HappyStk` happyRest
 
 happyReduce_8 = happySpecReduce_1  7 happyReduction_8
@@ -898,7 +898,7 @@ happyReduction_10 (HappyAbsSyn9  happy_var_3)
 	_
 	(HappyAbsSyn8  happy_var_1)
 	 =  HappyAbsSyn8
-		 (happy_var_3 : happy_var_1
+		 (happy_var_1 ++ [happy_var_3]
 	)
 happyReduction_10 _ _ _  = notHappyAtAll 
 
@@ -945,7 +945,7 @@ happyReduce_16 = happySpecReduce_2  11 happyReduction_16
 happyReduction_16 (HappyAbsSyn12  happy_var_2)
 	(HappyAbsSyn11  happy_var_1)
 	 =  HappyAbsSyn11
-		 (happy_var_2 ++ happy_var_1
+		 (happy_var_1 ++ happy_var_2
 	)
 happyReduction_16 _ _  = notHappyAtAll 
 
@@ -966,7 +966,7 @@ happyReduction_19 _
 	(HappyAbsSyn14  happy_var_2)
 	(HappyAbsSyn13  happy_var_1)
 	 =  HappyAbsSyn12
-		 (map (\idName -> (:#:) idName (happy_var_1,0) ) (reverse happy_var_2)
+		 (map (\idName -> (:#:) idName (happy_var_1,0) ) (happy_var_2)
 	)
 happyReduction_19 _ _ _  = notHappyAtAll 
 
@@ -1000,7 +1000,7 @@ happyReduction_24 (HappyTerminal (ID happy_var_3))
 	_
 	(HappyAbsSyn14  happy_var_1)
 	 =  HappyAbsSyn14
-		 (happy_var_3 : happy_var_1
+		 (happy_var_1 ++ [happy_var_3]
 	)
 happyReduction_24 _ _ _  = notHappyAtAll 
 
@@ -1024,7 +1024,7 @@ happyReduce_27 = happySpecReduce_2  16 happyReduction_27
 happyReduction_27 (HappyAbsSyn17  happy_var_2)
 	(HappyAbsSyn16  happy_var_1)
 	 =  HappyAbsSyn16
-		 (happy_var_2 : happy_var_1
+		 (happy_var_1 ++ [happy_var_2]
 	)
 happyReduction_27 _ _  = notHappyAtAll 
 

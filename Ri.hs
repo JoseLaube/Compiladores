@@ -6,7 +6,7 @@ data Tipo = TDouble | TInt | TString | TVoid deriving (Show, Eq)
 
 data TCons = CDouble Double | CInt Int deriving Show
 
-data Expr = Add Expr Expr | Sub Expr Expr | Mul Expr Expr | Div Expr Expr | Neg Expr | IdVar String | Chamada Id [Expr] | Lit String | Const TCons deriving Show -- adicao
+data Expr = Add Expr Expr | Sub Expr Expr | Mul Expr Expr | Div Expr Expr | Neg Expr | IdVar String | Chamada Id [Expr] | Lit String | Const TCons deriving Show
 
 data ExprR = Rgt Expr Expr | Rdf Expr Expr | Rlt Expr Expr | Req Expr Expr | Rle Expr Expr | Rge Expr Expr deriving Show
 
@@ -16,8 +16,26 @@ data Var = Id :#: (Tipo, Int) deriving Show
 
 type Bloco = [Comando]
 
-data Funcao = Id :->: ([Var], Tipo, Bloco) deriving Show  -- Nome, TipoRetorno, ListaParametros, Corpo
+data Funcao = Id :->: ([Var], Tipo) deriving Show
 
-data Programa = Prog [Funcao] [Var] Bloco deriving Show    -- ListaFuncoes, VarsGlobais (do BlocoPrincipal), BlocoPrincipalCmds
-                
+data Programa = Prog [Funcao] [(Id, [Var], Bloco)] [Var] Bloco deriving Show
+
 data Comando = If ExprL Bloco Bloco | While ExprL Bloco | Leitura Id | Imp Expr | Ret (Maybe Expr) | Proc Id [Expr] | Atrib String Expr deriving Show
+
+
+-- Função que transforma a função no formato esperado para o Programa
+transformaFuncao :: (Funcao, ([Var], Bloco)) -> (Id, [Var], Bloco)
+transformaFuncao (funcao, (variaveisBloco, bloco)) =
+    let
+        -- Decompoe a função, extraindo o nome e as variáveis
+        (identificador, tipo) = decompoeFuncao funcao
+        
+        -- Combina as variáveis do tipo da função com as variáveis do bloco
+        todasVariaveis = tipo ++ variaveisBloco
+    in
+        -- Retorna o identificador da função, todas as variáveis (tipo + variáveis do bloco), e o bloco de comandos
+        (identificador, todasVariaveis, bloco)
+
+-- Função auxiliar para decompor uma função no estilo Id :->: ([Var], Tipo)
+decompoeFuncao :: Funcao -> (Id, [Var])
+decompoeFuncao (identificador :->: (variaveis, _)) = (identificador, variaveis)
