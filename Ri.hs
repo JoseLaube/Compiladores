@@ -28,12 +28,12 @@ transformaFuncao :: (Funcao, ([Var], Bloco)) -> (Id, [Var], Bloco)
 transformaFuncao (funcao, (variaveisBloco, bloco)) =
     let
         -- Decompoe a função, extraindo o nome e as variáveis
-        (identificador, tipo) = decompoeFuncao funcao
+        (identificador, parametrosFuncao) = decompoeFuncao funcao
         
-        -- Combina as variáveis do tipo da função com as variáveis do bloco
-        todasVariaveis = tipo ++ variaveisBloco
+        -- Combina as variáveis dos parametros da funcao da função com as variáveis do bloco
+        todasVariaveis = parametrosFuncao ++ variaveisBloco
     in
-        -- Retorna o identificador da função, todas as variáveis (tipo + variáveis do bloco), e o bloco de comandos
+        -- Retorna o identificador da função, todas as variáveis (parametrosFuncao + variáveis do bloco), e o bloco de comandos
         (identificador, todasVariaveis, bloco)
 
 -- Função auxiliar para decompor uma função no estilo Id :->: ([Var], Tipo)
