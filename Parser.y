@@ -162,8 +162,28 @@ parseError :: [Token] -> a
 parseError s = error ("Parse error:" ++ show s)
 
 main = do
-  putStr "Programa: "
-  s <- getLine
-  let resultado = parsePrograma (L.alexScanTokens s) :: Programa
+  print "Teste 1"
+  txt <- readFile "teste1.txt"
+  print txt
+  let resultado = parsePrograma (L.alexScanTokens txt) :: Programa
   print resultado
+  putStrLn "\n"
+  print "Teste 2"
+  txt1 <- readFile "teste2.txt"
+  print txt1
+  let resultado1 = parsePrograma (L.alexScanTokens txt1) :: Programa
+  print resultado1
+  putStrLn "\n"
+  print "Teste 3"
+  txt2 <- readFile "teste3.txt"
+  print txt2
+  let resultado2 = parsePrograma (L.alexScanTokens txt2) :: Programa
+  print resultado2
+  putStrLn "\n"
+  print "Teste 4"
+  txt3 <- readFile "teste4.txt"
+  print txt3
+  let resultado3 = parsePrograma (L.alexScanTokens txt3) :: Programa
+  print resultado3
+  
 }

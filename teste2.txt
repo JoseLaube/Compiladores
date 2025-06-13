@@ -1,0 +1,1 @@
+int soma(int a, int b){return a + b;} {int resultado; resultado = soma(10, 5); print(15); }
