@@ -1,6 +1,0 @@
-{
-    int x;
-    print("Iniciando...");
-    x = 10;
-    print(x);
-}
