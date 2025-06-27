@@ -51,10 +51,32 @@ buscarFuncao id ((fun@(fId :->: _)) : fs, vars) =
         then Just fun
         else buscarFuncao id (fs, vars)
 
+--percorre a lista mantendo um registro dos nomes que ja foram visto
+verificaDuplicatas :: (Eq a, Show a) => (b -> a) -> [b] -> SemanticM ()
+verificaDuplicatas extrairNome lista = go lista []
+  where
+    -- 'go' é uma função auxiliar que faz o trabalho pesado.
+    -- O primeiro argumento é a lista que falta verificar.
+    -- O segundo argumento é a lista de nomes que já vimos.
+    go [] _ = pure () -- Caso base: se a lista a verificar está vazia, terminamos sem erros.
+    
+    go (itemAtual : restoDaLista) nomesVistos = do
+        let nomeAtual = extrairNome itemAtual
+
+        -- Verifica se o nome extraído já está na lista de nomes vistos
+        if nomeAtual `elem` nomesVistos
+            -- Se já vimos, emite um erro e para.
+            then erro ("Identificador duplicado encontrado: " ++ show nomeAtual)
+            -- Se não, continua a verificação recursivamente.
+            else go restoDaLista (nomeAtual : nomesVistos)
+                -- Continua com o resto da lista...
+                -- ...e adiciona o nome atual à lista de nomes vistos para as próximas verificações.
+
 analisa :: Programa -> SemanticM Programa
 analisa (Prog funcoesDefs corposFuncoes varsGlobais blocoPrincipal) = do
     -- Passo 1: Verificar se há funções ou variáveis globais duplicadas.
-    -- (Vamos implementar isso em breve)
+    verificaDuplicatas (\(fId :->:_) -> fId) funcoesDefs
+    verificaDuplicatas (\(vId :#: _) -> vId) varsGlobais
     
     -- Passo 2: Construir o ambiente inicial.
     -- Todas as funções são visíveis em todos os lugares.
