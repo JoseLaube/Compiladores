@@ -161,6 +161,7 @@ Factor : NUM                         { Const (CDouble $1) }
 parseError :: [Token] -> a
 parseError s = error ("Parse error:" ++ show s)
 
+{-
 main = do
   print "Teste 1"
   txt <- readFile "teste1.txt"
@@ -185,5 +186,7 @@ main = do
   print txt3
   let resultado3 = parsePrograma (L.alexScanTokens txt3) :: Programa
   print resultado3
-  
+-}
+
+
 }
