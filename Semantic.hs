@@ -1,6 +1,7 @@
 module Semantic where
 
 import Ri
+import Distribution.Compat.Lens (_1)
 
 -- Mônada criada : um valor do tipo 'a' e uma String para mensagens.
 data SemanticM a = Sem (String, a) deriving Show
@@ -108,14 +109,61 @@ analisaBloco env maybeFuncao (cmd:cmds) = do
 -- Analisa um único comando
 analisaComando :: Env -> Maybe Funcao -> Comando -> SemanticM Comando
 analisaComando env maybeFuncao cmd = case cmd of
-    -- Nosso teste de fumaça: quando encontrarmos um comando Imp (print),
-    -- emitimos um aviso e continuamos a análise na sua expressão interna.
+    
+    -- comando print(expr)
     Imp expr -> do
-        adv "Comando 'print' encontrado."
-        -- Por enquanto, a expressão não é analisada, apenas retornada.
-        -- Vamos adicionar 'analisaExpr' mais tarde.
-        pure (Imp expr)
+        -- adv "Comando 'print' encontrado."
+        (_, expr') <- analisaExpr env expr
+        -- Retorna o comando Imp com a expressão analisada.
+        pure (Imp expr')
+    
+    -- Comando 'id = expr;'
+    Atrib id expr -> do
+        -- 1. Verificamos se a variável do lado esquerdo da atribuição existe
+        case buscarVar id env of
+            Just _  -> pure () -- Se existe, ótimo, não fazemos nada.
+            Nothing -> erro ("Variável de atribuição '" ++ id ++ "' não declarada.")
+        
+        -- 2. AQUI É A OUTRA CONEXÃO: Analisamos a expressão do lado direito
+        (_, expr') <- analisaExpr env expr
+
+        -- Por enquanto, não comparamos os tipos (isso é Fase 3/4).
+        -- Apenas retornamos o comando com a expressão analisada.
+        pure (Atrib id expr')
 
     -- Para todos os outros comandos, por enquanto, não fazemos nada.
-    -- Apenas retornamos o comando como ele é.
     _ -> pure cmd
+
+-- Analisa uma expressão
+analisaExpr :: Env ->  Expr -> SemanticM (Tipo, Expr)
+analisaExpr env expr = case expr of
+    
+    -- CASOS BASE (Sem recursão) ABAIXO:
+
+    -- Se for uma constante, retornamos o tipo e a expressão.
+    Const (CInt n) -> do
+        -- Qual o tipo de um inteiro?
+        -- A AST precisa ser modificada? Não.
+        -- Use 'pure' para retornar o resultado.
+        pure (TInt, Const (CInt n))
+
+    -- Ex: 12.2123
+    Const (CDouble d) -> do
+        -- Qual o tipo de um double?
+        -- A AST precisa ser modificada? Não.
+        -- Use 'pure' para retornar o resultado.
+        pure (TDouble, Const (CDouble d))
+
+    -- Um literal string como "jose lindo"
+    Lit s -> do
+        pure(TString, Lit s)
+
+    
+    -- varaivel tipo 'contador'
+    IdVar id -> case buscarVar id env of
+        Just tipo -> pure (tipo, IdVar id)
+        Nothing -> do
+            erro("Variavel '" ++ id ++ "' não declarada.")
+            pure(TVoid, IdVar id) -- Retorna TVoid em caso de erro
+
+    

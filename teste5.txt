@@ -1,6 +1,10 @@
 {
     int x;
-    print("Iniciando...");
+    int y;
+    
     x = 10;
     print(x);
+    
+    y = z;
+    print(w);
 }
