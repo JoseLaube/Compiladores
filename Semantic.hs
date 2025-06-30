@@ -2,6 +2,7 @@ module Semantic where
 
 import Ri
 import Distribution.Compat.Lens (_1)
+import Control.Monad (when, zipWithM)
 
 -- Mônada criada : um valor do tipo 'a' e uma String para mensagens.
 data SemanticM a = Sem (String, a) deriving Show
@@ -72,25 +73,24 @@ verificaDuplicatas extrairNome lista = go lista []
                 -- ...e adiciona o nome atual à lista de nomes vistos para as próximas verificações.
 
 analisa :: Programa -> SemanticM Programa
-analisa (Prog funcoesDefs corposFuncoes varsGlobais blocoPrincipal) = do
+analisa (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
     -- Passo 1: Verificar se há funções ou variáveis globais duplicadas.
     verificaDuplicatas (\(fId :->:_) -> fId) funcoesDefs
     verificaDuplicatas (\(vId :#: _) -> vId) varsGlobais
     
     -- Passo 2: Construir o ambiente inicial.
     -- Todas as funções são visíveis em todos os lugares.
-    let funcoesAssinaturas = funcoesDefs
-    let envGlobal = (funcoesAssinaturas, varsGlobais)
+    let envGlobal = (funcoesDefs, varsGlobais)
 
     -- Passo 3: Analisar o bloco principal do programa.
     -- O 'Nothing' indica que não estamos dentro de uma função (importante para o 'return').
     blocoPrincipal' <- analisaBloco envGlobal Nothing blocoPrincipal
     
-    -- Passo 4: Analisar o corpo de cada função definida.
-    -- (Vamos implementar isso em breve)
-
+    -- Passo 4: Analisar o corpo de cada função definida
+    funcoesCorpos' <- mapM (analisaFuncaoCompleta envGlobal) funcoesCorpos
+    
     -- Por enquanto, retornamos uma AST parcialmente processada.
-    pure (Prog funcoesDefs corposFuncoes varsGlobais blocoPrincipal')
+    pure (Prog funcoesDefs funcoesCorpos' varsGlobais blocoPrincipal')
 
 
 
@@ -105,7 +105,59 @@ analisaBloco env maybeFuncao (cmd:cmds) = do
     -- Retorna o novo bloco com os comandos analisados
     pure (cmd' : cmds')
 
+analisaFuncaoCompleta :: Env -> (Id, [Var], Bloco) -> SemanticM (Id, [Var], Bloco)
+analisaFuncaoCompleta envGlobal (fId, locals, bloco) =
+    -- Primeiro, encontramos a assinatura completa da função para obter seus parâmetros e tipo de retorno.
+    case buscarFuncao fId envGlobal of
+        Nothing -> do
+            erro ("Erro interno: Corpo definido para função '" ++ fId ++ "' que não possui assinatura.")
+            pure (fId, locals, bloco)
 
+        Just (funcao@(_ :->: (params, _))) -> do
+            -- 1. Verificar duplicatas entre parâmetros e variáveis locais.
+            verificaDuplicatas (\(pId :#: _) -> pId) params
+            verificaDuplicatas (\(vId :#: _) -> vId) locals
+            let nomesParams = map (\(pId :#: _) -> pId) params
+            mapM_ (\(lId :#: _) -> when (lId `elem` nomesParams) $
+                                     erro ("Variável local '" ++ lId ++ "' tem o mesmo nome de um parâmetro na função '" ++ fId ++ "'.")) locals
+
+            -- 2. Construir o ambiente LOCAL da função.
+            let (funcoesGlobais, varsGlobais) = envGlobal
+            let envLocal = (funcoesGlobais, params ++ locals ++ varsGlobais)
+
+            -- 3. Analisar o bloco da função com o ambiente local.
+            bloco' <- analisaBloco envLocal (Just funcao) bloco
+
+            -- 4. Retorna a nova tupla representando o corpo da função analisada.
+            pure (fId, locals, bloco')
+
+-- | Analisa e aplica coerção de tipos para operadores binários (aritméticos e relacionais).
+--   Retorna o tipo resultante e as novas sub-árvores (possivelmente com nós de coerção).
+analisaOperandosCoerciveis :: Env -> Expr -> Expr -> SemanticM (Tipo, Expr, Expr)
+analisaOperandosCoerciveis env e1 e2 = do
+    (tipo1, novaE1) <- analisaExpr env e1
+    (tipo2, novaE2) <- analisaExpr env e2
+
+    case (tipo1, tipo2) of
+        -- Caso 1: Tipos já são iguais e numéricos. Nenhum trabalho a fazer.
+        (TInt, TInt)       -> pure (TInt,    novaE1, novaE2)
+        (TDouble, TDouble) -> pure (TDouble, novaE1, novaE2)
+
+        -- Caso 2: Promoção de Int para Double. O tipo resultante é Double.
+        (TInt, TDouble) -> pure (TDouble, IntDouble novaE1, novaE2)
+        (TDouble, TInt) -> pure (TDouble, novaE1, IntDouble novaE2)
+
+        -- Caso 3: Operandos não numéricos ou erros prévios.
+        -- Se um dos tipos for TVoid, um erro já foi emitido. Apenas propagamos.
+        _ | tipo1 == TString || tipo2 == TString -> do
+            erro ("Operação numérica inválida com o tipo String.")
+            pure (TVoid, novaE1, novaE2)
+        _ | tipo1 == TVoid || tipo2 == TVoid -> pure (TVoid, novaE1, novaE2)
+
+        -- Caso 4: Outros tipos incompatíveis.
+        _ -> do
+            erro ("Tipos incompatíveis para operação: " ++ show tipo1 ++ " e " ++ show tipo2)
+            pure (TVoid, novaE1, novaE2)
 
 -- Analisa um único comando
 analisaComando :: Env -> Maybe Funcao -> Comando -> SemanticM Comando
@@ -120,28 +172,48 @@ analisaComando env maybeFuncao cmd = case cmd of
     
     -- Comando 'id = expr;'
     Atrib id expr -> do
-        -- 1. Verificamos se a variável do lado esquerdo da atribuição existe
+        (tipoExpr, expr') <- analisaExpr env expr
         case buscarVar id env of
-            Just _  -> pure () -- Se existe, ótimo, não fazemos nada.
-            Nothing -> erro ("Variável de atribuição '" ++ id ++ "' não declarada.")
-        
-        -- 2. AQUI É A OUTRA CONEXÃO: Analisamos a expressão do lado direito
-        (_, expr') <- analisaExpr env expr
+            Nothing -> do
+                erro ("Variável de atribuição '" ++ id ++ "' não declarada.")
+                pure (Atrib id expr')
+ 
+            Just tipoVar -> do
+                -- Se a expressão já resultou em erro, não fazemos mais nada.
+                if tipoExpr == TVoid then
+                    pure (Atrib id expr')
+                else case (tipoVar, tipoExpr) of
+                    -- Caso 1: Tipos são idênticos. Atribuição válida.
+                    (TDouble, TDouble) -> pure (Atrib id expr')
+                    (TInt, TInt)       -> pure (Atrib id expr')
+                    (TString, TString) -> pure (Atrib id expr')
 
-        -- Por enquanto, não comparamos os tipos (isso é Fase 3/4).
-        -- Apenas retornamos o comando com a expressão analisada.
-        pure (Atrib id expr')
+                    -- Caso 2: Promoção (int -> double). Válido.
+                    (TDouble, TInt) -> pure (Atrib id (IntDouble expr'))
+
+                    -- Caso 3: Rebaixamento (double -> int). Válido, mas com aviso.
+                    (TInt, TDouble) -> do
+                        adv ("Atribuição de Double para Int na variável '" ++ id ++ "'. Pode haver perda de precisão.")
+                        pure (Atrib id (DoubleInt expr'))
+                    
+                    -- Caso 4: Todos os outros são erros de tipo.
+                    _ -> do
+                        erro ("Erro de tipo na atribuição para '" ++ id ++ "'. Esperado " ++ show tipoVar ++ " mas obteve " ++ show tipoExpr ++ ".")
+                        pure (Atrib id expr')
 
 
+    -- Chamada de um procedimento (função que não retorna valor)
     Proc id args -> case buscarFuncao id env of
         Nothing -> do
             erro ("Procedimento '" ++ id ++ "' não declarado.")
-            pure (Proc id args) -- Retorna o comando original
-        Just _ -> do
-            -- Função existe. Agora analisamos os argumentos.
-            argsAnalisados <- mapM (analisaExpr env) args
-            let novosArgs = map snd argsAnalisados
-            -- Retorna o comando Proc com os argumentos analisados
+            pure (Proc id args)
+
+        Just (_ :->: (params, tipoRetorno)) -> do
+            when (tipoRetorno /= TVoid) $
+                adv ("Função '" ++ id ++ "' que retorna " ++ show tipoRetorno ++ " está sendo chamada como um procedimento. O valor de retorno será descartado.")
+            
+            -- Mesma lógica da Chamada de função
+            novosArgs <- analisaArgumentos env params args
             pure (Proc id novosArgs)
 
 
@@ -163,10 +235,56 @@ analisaComando env maybeFuncao cmd = case cmd of
         pure (While cond' bloco')
 
 
-    -- Para todos os outros comandos, por enquanto, não fazemos nada.
+    Ret maybeExpr -> case maybeFuncao of
+        Nothing -> do
+            erro "Comando de retorno ('Ret') encontrado fora de uma função."
+            case maybeExpr of
+                Just expr -> Ret . Just . snd <$> analisaExpr env expr
+                Nothing   -> pure (Ret Nothing)
+            
+        Just (_ :->: (_, tipoRetornoEsperado)) -> do
+            case (maybeExpr, tipoRetornoEsperado) of
+                -- Caso 1: `return expr;` em uma função que espera um valor.
+                (Just expr, tipoRetornoEsperado) | tipoRetornoEsperado /= TVoid -> do
+                    (tipoExprRetornada, expr') <- analisaExpr env expr
+                    if tipoExprRetornada == TVoid then
+                        pure (Ret (Just expr')) -- Erro já emitido, apenas propaga
+                    else case (tipoRetornoEsperado, tipoExprRetornada) of
+                        (TDouble, TDouble) -> pure (Ret (Just expr'))
+                        (TInt, TInt)       -> pure (Ret (Just expr'))
+                        (TString, TString) -> pure (Ret (Just expr'))
+                        (TDouble, TInt)    -> pure (Ret (Just (IntDouble expr')))
+                        (TInt, TDouble)    -> do
+                            adv "Retorno de Double em uma função que espera Int. Pode haver perda de precisão."
+                            pure (Ret (Just (DoubleInt expr')))
+                        _ -> do
+                            erro ("Tipo de retorno incorreto. Esperado " ++ show tipoRetornoEsperado ++ " mas a função retorna " ++ show tipoExprRetornada ++ ".")
+                            pure (Ret (Just expr'))
     _ -> pure cmd
 
 
+-- | Analisa e aplica coerção aos argumentos de uma chamada de função.
+analisaArgumentos :: Env -> [Var] -> [Expr] -> SemanticM [Expr]
+analisaArgumentos env params args = do
+    -- Primeiro, verifica a aridade
+    if length args /= length params then do
+        erro ("Número incorreto de argumentos. Esperado: " ++ show (length params) ++ ", fornecido: " ++ show (length args) ++ ".")
+        -- Analisa os argumentos mesmo assim para encontrar outros erros
+        mapM (fmap snd . analisaExpr env) args
+    else do
+        -- 'zipWithM' itera sobre argumentos e parâmetros, aplicando a análise a cada par.
+        let analisaPar p a = analisaComando env Nothing (Atrib (getId p) a) >>= \(Atrib _ a') -> pure a'
+              where getId (id :#: _) = id
+        
+        -- Truque inteligente: Reutilizamos a lógica de 'Atrib' para fazer a coerção!
+        -- Criamos um ambiente temporário apenas com o parâmetro e "atribuímos" o argumento a ele.
+        zipWithM (\p a -> analisaComando ([], [p]) Nothing (Atrib (getId p) a) >>= \(Atrib _ a') -> pure a') params args
+          where getId (id :#: _) = id
+
+analisaExprAritmetica :: Env -> (Expr -> Expr -> Expr) -> Expr -> Expr -> SemanticM (Tipo, Expr)
+analisaExprAritmetica env construtor e1 e2 = do
+    (tipoResultante, e1', e2') <- analisaOperandosCoerciveis env e1 e2
+    pure (tipoResultante, construtor e1' e2')
 
 -- Analisa uma expressão
 analisaExpr :: Env ->  Expr -> SemanticM (Tipo, Expr)
@@ -215,94 +333,23 @@ analisaExpr env expr = case expr of
                 pure (tipoSubExpr, Neg novaSubExpr)
 
 
-    Add e1 e2 -> do
-        -- 1. Analisa recursivamente o lado esquerdo e1
-        (tipo1, novaE1)  <- analisaExpr env e1
-        -- 2. Analisa recursivamente o lado direito e2
-        (tipo2, novaE2)  <- analisaExpr env e2
-
-        --
-        if tipo1 == tipo2 && (tipo1 == TInt || tipo1 == TDouble)
-            then
-                -- 3. Se ambos os tipos são compatíveis, retorna o tipo e a nova expressão
-                pure (tipo1, Add novaE1 novaE2)
-            else do
-                -- 4. Se os tipos não são compatíveis, emite um erro
-                erro ("Tipos incompatíveis para adição: " ++ show tipo1 ++ " e " ++ show tipo2)
-                pure (TVoid, Add novaE1 novaE2) -- Retorna TVoid em caso de erro
-
-    -- Subtração, Multiplcação e Divisão seguem a mesma lógica de Adição
-    Sub e1 e2 -> do
-        (tipo1, novaE1) <- analisaExpr env e1
-        (tipo2, novaE2) <- analisaExpr env e2
-
-        if tipo1 == tipo2 && (tipo1 == TInt || tipo1 == TDouble)
-            then
-                -- 3. Se ambos os tipos são compatíveis, retorna o tipo e a nova expressão
-                pure (tipo1, Sub novaE1 novaE2)
-            else do
-                -- 4. Se os tipos não são compatíveis, emite um erro
-                erro ("Tipos incompatíveis para Subtração: " ++ show tipo1 ++ " e " ++ show tipo2)
-                pure (TVoid, Sub novaE1 novaE2) -- Retorna TVoid em caso de erro
-
-    Mul e1 e2 -> do
-        (tipo1, novaE1) <- analisaExpr env e1
-        (tipo2, novaE2) <- analisaExpr env e2
-
-        if tipo1 == tipo2 && (tipo1 == TInt || tipo1 == TDouble)
-            then
-                -- 3. Se ambos os tipos são compatíveis, retorna o tipo e a nova expressão
-                pure (tipo1, Mul novaE1 novaE2)
-            else do
-                -- 4. Se os tipos não são compatíveis, emite um erro
-                erro ("Tipos incompatíveis para Multiplicação: " ++ show tipo1 ++ " e " ++ show tipo2)
-                pure (TVoid, Mul novaE1 novaE2) -- Retorna TVoid em caso de erro
-
-    Div e1 e2 -> do
-        (tipo1, novaE1) <- analisaExpr env e1
-        (tipo2, novaE2) <- analisaExpr env e2
-
-        if tipo1 == tipo2 && (tipo1 == TInt || tipo1 == TDouble)
-            then
-                -- 3. Se ambos os tipos são compatíveis, retorna o tipo e a nova expressão
-                pure (tipo1, Div novaE1 novaE2)
-            else do
-                -- 4. Se os tipos não são compatíveis, emite um erro
-                erro ("Tipos incompatíveis para Divisão: " ++ show tipo1 ++ " e " ++ show tipo2)
-                pure (TVoid, Div novaE1 novaE2) -- Retorna TVoid em caso de erro
+    Add e1 e2 -> analisaExprAritmetica env Add e1 e2
+    Sub e1 e2 -> analisaExprAritmetica env Sub e1 e2
+    Mul e1 e2 -> analisaExprAritmetica env Mul e1 e2
+    Div e1 e2 -> analisaExprAritmetica env Div e1 e2
     
     -- Chamada de função como 'f(a,b)'
     Chamada id args -> case buscarFuncao id env of
-        -- CASO 1: A função NÃO foi encontrada
         Nothing -> do
-            -- O que você deve fazer aqui?
-            -- 1. Emitir uma mensagem de erro apropriada.
-            -- 2. Retornar um tipo de erro (TVoid) e a expressão original.
             erro ("Função '" ++ id ++ "' não declarada.")
             pure (TVoid, Chamada id args)
 
-        -- CASO 2: A função FOI encontrada
-        Just funcao -> do
-            -- 1. Extraia o tipo de retorno da assinatura da função.
-            -- Dica: Use pattern matching na 'funcao'.
-            let (_ :->: (_, tipoRetorno)) = funcao
-            
-            -- 2. Analise a lista de argumentos 'args'.
-            -- Use 'mapM' para aplicar 'analisaExpr env' a cada argumento em 'args'.
-            -- 'mapM (analisaExpr env) args' retornará um SemanticM [(Tipo, Expr)]
-            argsAnalisados <- mapM (analisaExpr env) args
-            
-            -- 3. 'mapM' nos deu uma lista de tuplas (Tipo, Expr).
-            -- Para a nova AST da Chamada, só precisamos da lista de expressões.
-            -- Use 'map snd' para extrair apenas as expressões da lista de tuplas.
-            let novosArgs = map snd argsAnalisados
-            
-            -- 4. Retorne o tipo de retorno da função e a nova AST da Chamada.
+        Just (_ :->: (params, tipoRetorno)) -> do
+            -- A nova função cuida de tudo: aridade, tipos e coerção.
+            novosArgs <- analisaArgumentos env params args
             pure (tipoRetorno, Chamada id novosArgs)
 
     
-
-
     _ -> pure(TVoid, expr) -- placeholder generico
 
 
@@ -314,22 +361,9 @@ analisaExpr env expr = case expr of
 --   - As duas sub-expressões e1 e e2.
 analisaExprRelacionalBinaria :: Env -> (Expr -> Expr -> ExprR) -> Expr -> Expr -> SemanticM ExprR
 analisaExprRelacionalBinaria env construtor e1 e2 = do
-    -- 1. Analisa as duas sub-expressões
-    (tipo1, novaE1) <- analisaExpr env e1
-    (tipo2, novaE2) <- analisaExpr env e2
-
-    -- 2. Aplica a lógica de verificação de tipos (a mesma que você já escreveu)
-    if (tipo1 == TString && tipo2 /= TString) || (tipo1 /= TString && tipo2 == TString) then do
-        erro ("Comparação de String com não-String: " ++ show e1 ++ " e " ++ show e2)
-        -- Mesmo com erro, construímos a nova expressão com o construtor original
-        pure (construtor novaE1 novaE2)
-    else if tipo1 /= tipo2 && tipo1 /= TString && tipo2 /= TString then do
-        erro ("Comparação entre tipos numéricos diferentes (sem coerção ainda): " ++ show tipo1 ++ " e " ++ show tipo2)
-        pure (construtor novaE1 novaE2)
-    else
-        -- Tudo certo, construímos a expressão final
-        pure (construtor novaE1 novaE2)
-
+    -- A lógica é a mesma, mas ignoramos o tipo resultante, pois o resultado de uma relação é sempre lógico.
+    (_, e1', e2') <- analisaOperandosCoerciveis env e1 e2
+    pure (construtor e1' e2')
 
 analisaExprR :: Env -> ExprR -> SemanticM ExprR
 analisaExprR env exprR = case exprR of
