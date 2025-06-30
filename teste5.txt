@@ -29,8 +29,9 @@ int testeErro(int a, int b){
 
     palavra = "Jose Lindo!!!";
     x = 10;
-    y = 5.4;
+    y = 1 + 2.2;
     k = 32;
+
     
     resultado2 = som(x, y);
     resultado3 = soma(x, y);

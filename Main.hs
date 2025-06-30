@@ -10,7 +10,7 @@ import qualified Lex as L -- Seu lexer gerado pelo Alex
 main :: IO ()
 main = do
     -- 1. Ler o código de um arquivo de teste
-    putStrLn "--- Teste de Análise Semântica ---"
+    putStrLn "--- Teste de Analise Semantica ---"
     conteudo <- readFile "teste5.txt"
     putStrLn "Código Fonte:"
     putStrLn conteudo
@@ -23,14 +23,21 @@ main = do
     -- A função 'analisa' retorna um valor dentro da nossa Mônada SemanticM
     let resultadoSemantico = analisa astInicial
     
-    -- 4. Extrair e imprimir os resultados
-    -- Usamos um 'case' para desempacotar o resultado da Mônada
+    -- Ler o Result e exibir os resultados (apenas para debug)
+    putStrLn "\n--- Valor Bruto do Result ---"
+    print resultadoSemantico
+
     case resultadoSemantico of
-        Sem (mensagens, astFinal) -> do
-            putStrLn "\n--- Mensagens do Analisador Semântico ---"
+        Result (houveErro, mensagens, astFinal) -> do
+            putStrLn "\n--- Mensagens do Analisador Semantico ---"
             if null mensagens
                 then putStrLn "Nenhuma mensagem."
                 else putStrLn mensagens
             
-            putStrLn "\n--- AST Final (após análise) ---"
+            putStrLn "\n--- AST Final (apos analise) ---"
             print astFinal
+            
+            putStrLn "\n--- Status Final ---"
+            if houveErro
+                then putStrLn "Compilação falhou devido a erros."
+                else putStrLn "Análise semântica concluída com sucesso (pode conter avisos)."
