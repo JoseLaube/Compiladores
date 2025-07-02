@@ -1,3 +1,4 @@
+
 module Semantic where
 
 import Ri   
@@ -46,23 +47,14 @@ buscarFuncao id ((fun@(fId :->: _)) : fs, vars) =
 verificaDuplicatas :: (Eq a, Show a) => (b -> a) -> [b] -> Result ()
 verificaDuplicatas extrairNome lista = go lista []
   where
-    -- 'go' é uma função auxiliar que faz o trabalho pesado.
-    -- O primeiro argumento é a lista que falta verificar.
-    -- O segundo argumento é a lista de nomes que já vimos.
-    go [] _ = pure () -- Caso base: se a lista a verificar está vazia, terminamos sem errorMsgs.
-    
+    go [] _ = pure () 
     go (itemAtual : restoDaLista) nomesVistos = do
         let nomeAtual = extrairNome itemAtual
 
-        -- Verifica se o nome extraído já está na lista de nomes vistos
         if nomeAtual `elem` nomesVistos
-            -- Se já vimos, emite um errorMsg e para.
-            then errorMsg ("Identificador duplicado encontrado: " ++ show nomeAtual)
-            -- Se não, continua a verificação recursivamente.
+           then errorMsg ("Identificador duplicado encontrado: " ++ show nomeAtual)
             else go restoDaLista (nomeAtual : nomesVistos)
-                -- Continua com o resto da lista...
-                -- ...e adiciona o nome atual à lista de nomes vistos para as próximas verificações.
-
+        
 analisa :: Programa -> Result Programa
 analisa (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
     -- Passo 1: Verificar se há funções ou variáveis globais duplicadas.
@@ -70,11 +62,10 @@ analisa (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
     verificaDuplicatas (\(vId :#: _) -> vId) varsGlobais
     
     -- Passo 2: Construir o ambiente inicial.
-    -- Todas as funções são visíveis em todos os lugares.
+    
     let envGlobal = (funcoesDefs, varsGlobais)
 
     -- Passo 3: Analisar o bloco principal do programa.
-    -- O 'Nothing' indica que não estamos dentro de uma função (importante para o 'return').
     blocoPrincipal' <- analisaBloco envGlobal Nothing blocoPrincipal
     
     -- Passo 4: Analisar o corpo de cada função definida
@@ -89,37 +80,29 @@ analisa (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
 analisaBloco :: Env -> Maybe Funcao -> Bloco -> Result Bloco
 analisaBloco _ _ [] = pure [] -- Bloco vazio está sempre correto.
 analisaBloco env maybeFuncao (cmd:cmds) = do
-    -- Analisa o primeiro comando
     cmd' <- analisaComando env maybeFuncao cmd
-    -- Analisa o resto do bloco
     cmds' <- analisaBloco env maybeFuncao cmds
-    -- Retorna o novo bloco com os comandos analisados
     pure (cmd' : cmds')
 
 analisaFuncaoCompleta :: Env -> (Id, [Var], Bloco) -> Result (Id, [Var], Bloco)
 analisaFuncaoCompleta envGlobal (fId, locals, bloco) =
-    -- Primeiro, encontramos a assinatura completa da função para obter seus parâmetros e tipo de retorno.
     case buscarFuncao fId envGlobal of
         Nothing -> do
             errorMsg ("errorMsg interno: Corpo definido para função '" ++ fId ++ "' que não possui assinatura.")
             pure (fId, locals, bloco)
 
         Just (funcao@(_ :->: (params, _))) -> do
-            -- 1. Verificar duplicatas entre parâmetros e variáveis locais.
             verificaDuplicatas (\(pId :#: _) -> pId) params
             verificaDuplicatas (\(vId :#: _) -> vId) locals
             let nomesParams = map (\(pId :#: _) -> pId) params
             mapM_ (\(lId :#: _) -> when (lId `elem` nomesParams) $
                                      errorMsg ("Variável local '" ++ lId ++ "' tem o mesmo nome de um parâmetro na função '" ++ fId ++ "'.")) locals
 
-            -- 2. Construir o ambiente LOCAL da função.
             let (funcoesGlobais, varsGlobais) = envGlobal
             let envLocal = (funcoesGlobais, params ++ locals ++ varsGlobais)
 
-            -- 3. Analisar o bloco da função com o ambiente local.
             bloco' <- analisaBloco envLocal (Just funcao) bloco
 
-            -- 4. Retorna a nova tupla representando o corpo da função analisada.
             pure (fId, locals, bloco')
 
 
@@ -141,9 +124,7 @@ analisaComando env maybeFuncao cmd = case cmd of
     
     -- comando print(expr)
     Imp expr -> do
-        -- warningMsg "Comando 'print' encontrado."
         (_, expr') <- analisaExpr env expr
-        -- Retorna o comando Imp com a expressão analisada.
         pure (Imp expr')
     
     -- Comando 'id = expr;'
@@ -155,30 +136,24 @@ analisaComando env maybeFuncao cmd = case cmd of
                 pure (Atrib id expr')
  
             Just tipoVar -> do
-                -- Se a expressão já resultou em errorMsg, não fazemos mais nada.
                 if tipoExpr == TVoid then
                     pure (Atrib id expr')
                 else case (tipoVar, tipoExpr) of
-                    -- Caso 1: Tipos são idênticos. Atribuição válida.
                     (TDouble, TDouble) -> pure (Atrib id expr')
                     (TInt, TInt)       -> pure (Atrib id expr')
                     (TString, TString) -> pure (Atrib id expr')
 
-                    -- Caso 2: Promoção (int -> double). Válido.
                     (TDouble, TInt) -> pure (Atrib id (IntDouble expr'))
 
-                    -- Caso 3: Rebaixamento (double -> int). Válido, mas com aviso.
                     (TInt, TDouble) -> do
                         warningMsg ("Atribuição de Double para Int na variável '" ++ id ++ "'. Pode haver perda de precisão.")
                         pure (Atrib id (DoubleInt expr'))
                     
-                    -- Caso 4: Todos os outros são errorMsgs de tipo.
                     _ -> do
                         errorMsg ("errorMsg de tipo na atribuição para '" ++ id ++ "'. Esperado " ++ show tipoVar ++ " mas obteve " ++ show tipoExpr ++ ".")
                         pure (Atrib id expr')
 
 
-    -- Chamada de um procedimento (função que não retorna valor)
     Proc id args -> case buscarFuncao id env of
         Nothing -> do
             errorMsg ("Procedimento '" ++ id ++ "' não declarado.")
@@ -194,18 +169,14 @@ analisaComando env maybeFuncao cmd = case cmd of
 
 
     If cond blocoThen blocoElse -> do
-        -- Analisamos a condicao, que deve ser uma expressao logica, exemplo (12 == 90)
         cond' <- analisaExprL env cond
 
-        -- Analisamos os blocos de comandos como de costume
         blocoThen' <- analisaBloco env maybeFuncao blocoThen
         blocoElse' <- analisaBloco env maybeFuncao blocoElse
 
-        -- Retorna o comando If com a condição e os blocos analisados
         pure (If cond' blocoThen' blocoElse')
 
     While cond bloco -> do
-        -- Mesma lógica do If
         cond' <- analisaExprL env cond
         bloco' <- analisaBloco env maybeFuncao bloco
         pure (While cond' bloco')
@@ -214,27 +185,22 @@ analisaComando env maybeFuncao cmd = case cmd of
     Ret maybeExpr -> case maybeFuncao of
         Nothing -> do
             errorMsg "Comando de retorno ('return') encontrado fora de uma função."
-            -- Analisa a expressão mesmo assim, se houver, para encontrar outros erros.
             case maybeExpr of
                 Just expr -> Ret . Just . snd <$> analisaExpr env expr
                 Nothing   -> pure (Ret Nothing)
 
         Just (funcao@(_ :->: (_, tipoRetornoEsperado))) ->
             case (maybeExpr, tipoRetornoEsperado) of
-                -- Caso correto: return; em uma função void.
                 (Nothing, TVoid) -> pure (Ret Nothing)
 
-                -- Erro: return; em uma função que espera um valor.
                 (Nothing, tipo) -> do
                     errorMsg ("Função espera um retorno do tipo " ++ show tipo ++ ", mas 'return' foi chamado sem valor.")
                     pure (Ret Nothing)
 
-                -- Erro: return <expr>; em uma função void.
                 (Just expr, TVoid) -> do
                     errorMsg ("Função com retorno 'void' não pode retornar um valor, mas uma expressão foi fornecida.")
                     Ret . Just . snd <$> analisaExpr env expr -- Analisa a expressão por outros erros.
 
-                -- Caso correto: return <expr>; em uma função que espera um valor.
                 (Just expr, tipo) -> do
                     (tipoExpr, expr') <- analisaExpr env expr
                     if tipoExpr == TVoid then
@@ -253,21 +219,15 @@ analisaComando env maybeFuncao cmd = case cmd of
     _ -> pure cmd
 
 
--- | Analisa e aplica coerção aos argumentos de uma chamada de função.
 analisaArgumentos :: Env -> [Var] -> [Expr] -> Result [Expr]
 analisaArgumentos env params args = do
-    -- Primeiro, verifica a aridade
     if length args /= length params then do
         errorMsg ("Numero incorreto de argumentos. Esperado: " ++ show (length params) ++ ", fornecido: " ++ show (length args) ++ ".")
-        -- Analisa os argumentos mesmo assim para encontrar outros errorMsgs
         mapM (fmap snd . analisaExpr env) args
     else do
-        -- 'zipWithM' itera sobre argumentos e parâmetros, aplicando a análise a cada par.
         let analisaPar p a = analisaComando env Nothing (Atrib (getId p) a) >>= \(Atrib _ a') -> pure a'
               where getId (id :#: _) = id
         
-        -- Truque inteligente: Reutilizamos a lógica de 'Atrib' para fazer a coerção!
-        -- Criamos um ambiente temporário apenas com o parâmetro e "atribuímos" o argumento a ele.
         zipWithM (\p a -> analisaComando ([], [p]) Nothing (Atrib (getId p) a) >>= \(Atrib _ a') -> pure a') params args
           where getId (id :#: _) = id
 
@@ -277,46 +237,30 @@ analisaArgumentos env params args = do
 analisaExpr :: Env ->  Expr -> Result (Tipo, Expr)
 analisaExpr env expr = case expr of
     
-    -- CASOS BASE (Sem recursão) ABAIXO:
-
-    -- Se for uma constante, retornamos o tipo e a expressão.
     Const (CInt n) -> do
-        -- Qual o tipo de um inteiro?
-        -- A AST precisa ser modificada? Não.
-        -- Use 'pure' para retornar o resultado.
         pure (TInt, Const (CInt n))
 
-    -- Ex: 12.2123
     Const (CDouble d) -> do
-        -- Qual o tipo de um double?
-        -- A AST precisa ser modificada? Não.
-        -- Use 'pure' para retornar o resultado.
         pure (TDouble, Const (CDouble d))
 
-    -- Um literal string como "jose lindo"
     Lit s -> do
         pure(TString, Lit s)
 
     
-    -- varaivel tipo 'contador'
     IdVar id -> case buscarVar id env of
         Just tipo -> pure (tipo, IdVar id)
         Nothing -> do
             errorMsg("Variavel '" ++ id ++ "' nao declarada.")
             pure(TVoid, IdVar id) -- Retorna TVoid em caso de errorMsg
 
-    -- CASOS RECURSIVOS
     Neg e -> do
-        -- 1. Analise recursiva da expressão 'e'
         (tipoSubExpr, novaSubExpr) <- analisaExpr env e
 
-        -- 2. Verifica se o tipo é compatível com a negação (so nao é valida se for string)
         if tipoSubExpr == TString
             then do
                 errorMsg("Nao se pode negar uma expressao do tipo String.")
                 pure (TVoid, Neg novaSubExpr) -- Retorna TVoid em caso de errorMsg
             else
-                -- 3. Retorna o tipo e a nova expressão (Negar um Double retorna um double)
                 pure (tipoSubExpr, Neg novaSubExpr)
 
 
@@ -344,14 +288,12 @@ analisaExpr env expr = case expr of
         (tipoFinal, e1'', e2'') <- coercao "/" e1' e2' t1 t2
         return (tipoFinal, Div e1'' e2'')
     
-    -- Chamada de função como 'f(a,b)'
     Chamada id args -> case buscarFuncao id env of
         Nothing -> do
             errorMsg ("Funcao '" ++ id ++ "' nao declarada.")
             pure (TVoid, Chamada id args)
 
         Just (_ :->: (params, tipoRetorno)) -> do
-            -- A nova função cuida de tudo: aridade, tipos e coerção.
             novosArgs <- analisaArgumentos env params args
             pure (tipoRetorno, Chamada id novosArgs)
 
@@ -385,12 +327,10 @@ analisaExprR env exprR = case exprR of
 -- Analisa uma expressão lógica
 analisaExprL :: Env -> ExprL -> Result ExprL
 analisaExprL env exprL = case exprL of
-    -- Caso base: uma expressao logica que é, na vv, uma relacional
     Rel exprR -> do 
         novaExprR <- analisaExprR env exprR
         pure (Rel novaExprR)
 
-    -- Casos recursivos para operadores logicos
     And e1 e2 -> do
         novaE1 <- analisaExprL env e1
         novaE2 <- analisaExprL env e2
