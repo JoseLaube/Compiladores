@@ -396,6 +396,11 @@ analisaExprL env exprL = case exprL of
         novaE2 <- analisaExprL env e2
         pure (And novaE1 novaE2)
 
+    Or e1 e2 -> do
+        novaE1 <- analisaExprL env e1
+        novaE2 <- analisaExprL env e2
+        pure (Or novaE1 novaE2)
+
     Not e -> do
         novaE <- analisaExprL env e
         pure (Not novaE)

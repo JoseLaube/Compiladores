@@ -1,62 +1,58 @@
--- Main.hs
+-- Em Main.hs
 module Main where
 
 import Ri
 import Token
 import Parser  -- Seu parser gerado pelo Happy
-import Semantic -- Seu módulo de análise semântica
-import GenCode  -- Importa o novo módulo de geração de código
+import Semantic -- Nosso novo módulo de análise semântica
+import GenCode
 import qualified Lex as L -- Seu lexer gerado pelo Alex
-
-import System.FilePath (takeBaseName, (-<.>)) -- Para manipular nomes de arquivos
 
 main :: IO ()
 main = do
-    -- O trabalho da 'main' agora é simplesmente iniciar o processo de compilação
-    -- com o arquivo que você quer testar.
-    putStrLn "--- INICIANDO COMPILADOR ---"
-    compilarArquivo "teste5.txt" -- <<< CHAMANDO A FUNÇÃO DE COMPILAÇÃO
-    putStrLn "--- FIM DA EXECUÇÃO ---"
-
--- Função principal que encapsula TODA a lógica de compilação
-compilarArquivo :: FilePath -> IO ()
-compilarArquivo filePath = do
-    putStrLn "========================================="
-    putStrLn $ "DEBUG: Iniciando compilação de: " ++ filePath
+    -- 1. Ler o código de um arquivo de teste
+    putStrLn "--- Teste de Analise Semantica ---"
+    -- conteudo <- readFile "testeCompleto.txt"
+    conteudo <- readFile "testeCodigo.txt"
+    putStrLn "Código Fonte:"
+    putStrLn conteudo
     
-    conteudo <- readFile filePath
-    
-    putStrLn "DEBUG: Arquivo lido. Chamando o lexer..."
+    -- 2. Chamar o lexer e o parser
     let tokens = L.alexScanTokens conteudo
+    let astInicial = parsePrograma tokens
+
+    -- 3. Chamar nosso analisador semântico
+    -- A função 'analisa' retorna um valor dentro da nossa Mônada SemanticM
+    let resultadoSemantico = analisa astInicial
     
-    putStrLn "DEBUG: Lexer concluído. Chamando o parser..."
-    -- A linha a seguir pode travar se houver um erro de sintaxe!
-    let astInicial = parsePrograma tokens 
-    
-    putStrLn "DEBUG: Parser concluído. Chamando a análise semântica..."
-    let Result (houveErro, mensagens, astAnalisada) = analisa astInicial
-    
-    putStrLn "DEBUG: Análise semântica concluída. Verificando resultados..."
-    
-    putStrLn "\n--- Mensagens do Analisador Semântico ---"
-    if null mensagens
-        then putStrLn "Nenhuma mensagem."
-        else putStrLn mensagens
-    
-    -- Verificamos o booleano de erro
-    if houveErro then do
-        putStrLn "\nDEBUG: 'houveErro' é True. Abortando."
-        putStrLn "Compilação interrompida devido a erros semânticos."
-    else do
-        putStrLn "\nDEBUG: 'houveErro' é False. Prosseguindo para a geração de código."
-        let nomeBase = takeBaseName filePath
-        let codigoJasmin = gerar nomeBase astAnalisada
-        
-        putStrLn "DEBUG: Geração de código concluída. Salvando arquivo..."
-        let outputFileName = nomeBase -<.> "j"
-        writeFile outputFileName codigoJasmin
-        
-        putStrLn $ "\nCompilação concluída com sucesso!"
-        putStrLn $ "Código Jasmin salvo em: " ++ outputFileName
-    
-    putStrLn "========================================="
+    -- Ler o Result e exibir os resultados (apenas para debug)
+    putStrLn "\n--- Valor Bruto do Result ---"
+    print resultadoSemantico
+
+    case resultadoSemantico of
+        Result (houveErro, mensagens, astFinal) -> do
+            putStrLn "\n--- Mensagens do Analisador Semantico ---"
+            if null mensagens
+                then putStrLn "Nenhuma mensagem."
+                else putStrLn mensagens
+            
+            putStrLn "\n--- AST Final (apos analise) ---"
+            print astFinal
+            
+            putStrLn "\n--- Status Final ---"
+            if houveErro
+                then putStrLn "Compilação falhou devido a erros."
+                
+                else do
+                    putStrLn "Análise semântica concluída com sucesso (pode conter avisos)."
+
+                    -- FASE 3: GERAÇÃO DE CÓDIGO
+                    putStrLn "\n--- Fase 3: Geração de Código Assembly ---"
+                    let nomeClasse = "MeuPrograma"
+                    let codigoJasmin = gerar nomeClasse astFinal  -- Chama a função 'gerar' do GenCode com a AST final
+                    
+                    -- Grava o código gerado em um arquivo .j
+                    let nomeArquivoSaida = nomeClasse ++ ".j"
+                    writeFile nomeArquivoSaida codigoJasmin
+                    
+                    putStrLn ("Código Jasmin gerado com sucesso e salvo em '" ++ nomeArquivoSaida ++ "'")

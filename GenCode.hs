@@ -6,140 +6,260 @@ import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Map (Map)
 
--- ... (SymTab, criarTabela, buscarIndice - Nenhuma mudança necessária aqui) ...
-type SymTab = Map Id Int
-criarTabela :: [Id] -> Int -> (SymTab, Int)
-criarTabela nomes indiceInicial = (Map.fromList indices, proxIndice)
-  where
-    indices = zip nomes [indiceInicial..]
-    proxIndice = indiceInicial + length nomes
-buscarIndice :: Id -> SymTab -> Maybe Int
-buscarIndice nome tabela = Map.lookup nome tabela
--- ...
+type SymTab = Map Id (Tipo, Int)   -- A symtab agora mapeia um id para uma tupla (Tipo, Indice)
+
+-- funcao para criar a tabela apartir da lista de varaiveis da AST, retorna a tabela e o prox indice livre
+criarTabela :: [Var] -> Int -> (SymTab, Int)
+criarTabela vars indiceInicial = (Map.fromList entradas, proxIndice)
+    where
+        entradas = zip (map getId vars) (zip (map getTipo vars) [indiceInicial..])
+        proxIndice = indiceInicial + length vars
+        -- funcs auxiliares para extrair o Id e Tipo de uma Var
+        getId (id :#: _) = id
+        getTipo (_ :#: (tipo, _)) = tipo
+
+-- func para buscar um simbolo na tabela
+buscarSimbolo :: Id -> SymTab -> Maybe (Tipo, Int)
+buscarSimbolo nome tabela = Map.lookup nome tabela
 
 novoLabel :: State Int String
 novoLabel = do { n <- get; put (n + 1); return ("l" ++ show n) }
 
--- Gera código para expressões que produzem um valor na pilha (R-Values)
-genExprR :: SymTab -> Expr -> State Int String
-genExprR symTab (Const (CInt i)) = return ("\tbipush " ++ show i ++ "\n")
-genExprR symTab (IdVar nome) =
-    case buscarIndice nome symTab of
-        Just indice -> return ("\tiload " ++ show indice ++ "\n")
-        Nothing -> error ("[CodeGen] Variavel nao encontrada: " ++ nome)
-genExprR symTab (Add e1 e2) = do
-    code1 <- genExprR symTab e1
-    code2 <- genExprR symTab e2
-    return (code1 ++ code2 ++ "\tiadd\n")
--- --- TODO: Próximos Passos para genExprR ---
--- 1. Adicionar os outros operadores aritméticos.
--- genExprR symTab (Sub e1 e2) = ... (usar isub)
--- genExprR symTab (Mul e1 e2) = ... (usar imul)
--- genExprR symTab (Div e1 e2) = ... (usar idiv)
--- genExprR symTab (Neg e)     = ... (gerar 'e' e depois 'ineg')
+-- gera codigo para expressoes que sobem valores para a pilha
+genExpr :: SymTab -> Expr -> State Int (Tipo, String)
+genExpr symTab (Const (CInt i))    = return (TInt, genInt i)
+genExpr symTab (Const (CDouble d)) = return (TDouble, "\tldc2_w " ++ show d ++ "\n")
+genExpr symTab (Lit s)             = return (TString, "\tldc \"" ++ s ++ "\"\n")
 
--- 2. Lidar com outros tipos de constantes e literais.
--- genExprR symTab (Const (CDouble d)) = return ("\tldc2_w " ++ show d ++ "\n") -- para doubles
--- genExprR symTab (Lit s)             = return ("\tldc \"" ++ s ++ "\"\n")   -- para strings
+genExpr symTab (IdVar nome) = 
+    case buscarSimbolo nome symTab of
+        Nothing ->
+            -- erro que nao deve acontecer mas deixar a verificacao dele aqui
+            error("[CodeGen] Erro fatal: variavel '" ++ nome ++ "' nao encontrada na tabela de simbolos")
 
--- 3. Lidar com coerção de tipos que a análise semântica inseriu.
--- genExprR symTab (IntDouble e) = do { code <- genExprR symTab e; return (code ++ "\ti2d\n") }
--- genExprR symTab (DoubleInt e) = do { code <- genExprR symTab e; return (code ++ "\td2i\n") }
+        Just (tipo, indice) ->
+            let instr = case tipo of
+                            TInt -> "iload"
+                            TDouble -> "dload"
+                            TString -> "aload"
+                            _   -> error "[CodeGen] Tipo de variavel não suportada"   -- outro erro possivel
+        
+            in return (tipo, "\t" ++ instr ++ " " ++ show indice ++ "\n") -- o retorno é o tipo da variavel e o codigo para load na pilha
 
--- 4. Lidar com chamadas de função que retornam valor.
--- genExprR symTab (Chamada id args) = ... (gerar código para os args, depois invokestatic)
+genExpr tab (Add e1 e2) = do
+    (t1, e1') <- genExpr tab e1
+    (t2, e2') <- genExpr tab e2
+    return (t1, e1' ++ e2' ++ genOp t1 "add")
 
--- --- FIM dos TODOs para genExprR ---
+genExpr tab (Sub e1 e2) = do
+    (t1, e1') <- genExpr tab e1
+    (t2, e2') <- genExpr tab e2
+    return (t1, e1' ++ e2' ++ genOp t1 "sub")
+
+genExpr tab (Mul e1 e2) = do
+    (t1, e1') <- genExpr tab e1
+    (t2, e2') <- genExpr tab e2
+    return (t1, e1' ++ e2' ++ genOp t1 "mul")
+
+genExpr tab (Div e1 e2) = do
+    (t1, e1') <- genExpr tab e1
+    (t2, e2') <- genExpr tab e2
+    return (t1, e1' ++ e2' ++ genOp t1 "div")
+
+genExpr tab (Neg e) = do
+    (tipo, code) <- genExpr tab e
+    return (tipo, code ++ genOp tipo "neg")
+
+genExpr tab (IntDouble e) = do
+    (_, code) <- genExpr tab e
+    return (TDouble, code ++ "\ti2d\n")
+
+genExpr tab (DoubleInt e) = do
+    (_, code) <- genExpr tab e
+    return (TInt, code ++ "\td2i\n")
 
 
--- --- TODO: Nova Seção Inteira - Expressões Lógicas e Relacionais ---
--- Precisamos de funções para gerar código para If/While.
--- A ideia é gerar saltos (jumps) em vez de valores true/false.
+genExpr _ _ = return (TVoid, ";; TODO: implementar outros casos de genExpr\n")
 
--- genExprR_relacional: Gera código para uma comparação.
--- Recebe dois labels: para onde saltar se for VERDADEIRO e para onde saltar se for FALSO.
--- genExprR_relacional :: SymTab -> String -> String -> ExprR -> State Int String
--- genExprR_relacional symTab lTrue lFalse (Req e1 e2) = do
---     code1 <- genExprR symTab e1
---     code2 <- genExprR symTab e2
---     -- Compara os dois valores no topo da pilha e salta para lTrue se forem iguais.
---     -- Caso contrário, a execução continua e salta para lFalse.
---     return (code1 ++ code2 ++ "\tif_icmpeq " ++ lTrue ++ "\n" ++ "\tgoto " ++ lFalse ++ "\n")
--- -- ... implementar para Rdf (if_icmpne), Rlt (if_icmplt), etc.
 
--- genExprL: Gera código para uma expressão lógica completa (com And, Or, Not).
--- genExprL :: SymTab -> String -> String -> ExprL -> State Int String
--- genExprL symTab lTrue lFalse (Rel exprR) = genExprR_relacional symTab lTrue lFalse exprR
--- genExprL symTab lTrue lFalse (And e1 e2) = do
---     lMeio <- novoLabel
---     -- Lógica do 'And': se e1 for falso, salta direto para lFalse. Se for verdadeiro, continua para lMeio.
---     code1 <- genExprL symTab lMeio lFalse e1
---     -- Em lMeio, avaliamos e2.
---     code2 <- genExprL symTab lTrue lFalse e2
---     return (code1 ++ lMeio ++ ":\n" ++ code2)
--- -- ... implementar para Or e Not.
+-- func que recebe a SymTab, a expressao, o label v e f
+genExprL :: SymTab -> ExprL -> String -> String -> State Int String
+-- a expressao logica é uma unica expressao relacional
+genExprL tab (Rel exprR) lTrue lFalse = genExprR tab exprR lTrue lFalse
 
--- --- FIM da Seção de Expressões Lógicas ---
+genExprL tab (And e1 e2) lTrue lFalse = do
+    lMeio <- novoLabel
+
+    code1 <- genExprL tab e1 lMeio lFalse  -- gera o codigo de e1 e ve se pula pro final ou segue a avaliacao
+    code2 <- genExprL tab e2 lTrue lFalse -- o mesmo, mas aqui pode concluir que a exprL é V
+
+    return (code1 ++ lMeio ++":\n" ++ code2)
+
+genExprL tab (Or e1 e2) lTrue lFalse = do
+    lMeio <- novoLabel
+
+    code1 <- genExprL tab e1 lTrue lMeio -- se e1 é V entao pode pular para o final, se nao devemos segir para lMeio
+    code2 <- genExprL tab e2 lTrue lFalse
+
+    return (code1 ++ lMeio ++ ":\n" ++ code2)
+
+genExprL tab (Not e) lTrue lFalse = 
+    genExprL tab e lFalse lTrue  -- basta inverter os saltos
+
+
+
+-- Gera código para uma expressão RELACIONAL que resulta em um salto.
+genExprR :: SymTab -> ExprR -> String -> String -> State Int String
+genExprR tab exprR lTrue lFalse = do
+    -- A lógica de gerar o código das sub-expressões é a mesma para todos.
+    let (op, e1, e2) = case exprR of
+                        Req a b -> ("==", a, b)
+                        Rdf a b -> ("/=", a, b)
+                        Rle a b -> ("<=", a, b)
+                        Rge a b -> (">=", a, b)
+                        Rlt a b -> ("<",  a, b)
+                        Rgt a b -> (">",  a, b)
+    
+    (tipo1, code1) <- genExpr tab e1
+    (_,     code2) <- genExpr tab e2
+
+    let relCode = genRel op tipo1 lTrue
+    return (code1 ++ code2 ++ relCode ++ "\tgoto " ++ lFalse ++ "\n")
 
 
 -- Gera código para comandos
 genCmd :: SymTab -> Comando -> State Int String
 genCmd symTab (Atrib nome expr) = do
-    exprCode <- genExprR symTab expr
-    case buscarIndice nome symTab of
-        Just indice -> return (exprCode ++ "\tistore " ++ show indice ++ "\n")
-        Nothing -> error ("[CodeGen] Variavel nao encontrada: " ++ nome)
+    (_, codeExpr) <- genExpr symTab expr -- gera o codigo para a expressao do lado direito, isso deixa a expressao no topo da pilha
+
+    case buscarSimbolo nome symTab of
+        Nothing -> error ("[CodeGen] Erro fatal: variavel de atribuicao '"++ nome ++ "' nao encontrada")
+        Just (tipo, indice) -> do
+            let instr = case tipo of
+                            TInt   -> "istore"
+                            TDouble -> "dstore"
+                            TString -> "astore"
+                            _       -> error "[CodeGen] Atribuicao para tipo invalido!"
+            return (codeExpr ++ "\t" ++ instr ++ " " ++ show indice ++ "\n")
+
 genCmd symTab (Imp expr) = do
-    exprCode <- genExprR symTab expr
-    return (
-        "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n" ++
-        exprCode ++
-        -- --- TODO: Melhorar 'Imp' para lidar com diferentes tipos ---
-        -- A instrução println é sobrecarregada. Precisamos saber o tipo da 'expr'
-        -- para escolher a assinatura correta. Ex: (I)V para Int, (D)V para Double, etc.
-        "\tinvokevirtual java/io/PrintStream/println(I)V\n"
-        )
--- --- TODO: Próximos Passos para genCmd ---
--- 1. Implementar If/While usando a nova função genExprL.
--- genCmd symTab (If cond blocoThen blocoElse) = do
---     lTrue <- novoLabel
---     lFalse <- novoLabel
---     lEnd <- novoLabel
---     condCode <- genExprL symTab lTrue lFalse cond
---     thenCode <- genBloco symTab blocoThen
---     elseCode <- genBloco symTab blocoElse
---     return (condCode ++ lTrue ++ ":\n" ++ thenCode ++ "\tgoto " ++ lEnd ++ "\n" ++ lFalse ++ ":\n" ++ elseCode ++ lEnd ++ ":\n")
--- genCmd symTab (While cond bloco) = ... (lógica similar com 3 labels)
+    (tipoExpr, codeExpr) <- genExpr symTab expr
+    let tipoJasmin = case tipoExpr of
+                        TInt    -> "I"
+                        TDouble -> "D"
+                        TString -> "Ljava/lang/String;"
+                        _       -> "V" -- so para casos de erros indefinidos
+    return ( "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n" ++ codeExpr ++ "\tinvokevirtual java/io/PrintStream/println(" ++ tipoJasmin ++ ")V\n")
 
--- 2. Implementar chamada de procedimento (função que não retorna valor).
--- genCmd symTab (Proc id args) = ... (mesma lógica da Chamada, mas sem esperar valor de retorno)
+genCmd tab (If cond blocoThen []) = do   -- if sem else
+    lTrue <- novoLabel
+    lEnd <- novoLabel 
 
--- 3. Implementar Leitura e Retorno.
--- genCmd symTab (Leitura id) = ... (usar java.util.Scanner para ler e 'istore'/'dstore' para salvar)
--- genCmd symTab (Ret maybeExpr) = ... (gerar código para maybeExpr e usar 'ireturn'/'dreturn' ou 'return' para void)
+    codeCond <-genExprL tab cond lTrue lEnd
+    codeThen <- genBloco tab blocoThen
+    return (codeCond ++ lTrue ++ ":\n" ++ codeThen ++ lEnd ++ ":\n")
 
--- --- FIM dos TODOs para genCmd ---
+genCmd tab (If cond blocoThen blocoElse) = do   -- if com else
+    lTrue <- novoLabel
+    lFalse <- novoLabel
+    lEnd <- novoLabel 
+
+    codeCond <- genExprL tab cond lTrue lFalse  -- gera o codigo e faz o salto se for true ou false
+
+    codeThen <-genBloco tab blocoThen
+    codeElse <- genBloco tab blocoElse
+
+    return (codeCond ++ lTrue ++ ":\n" ++ codeThen ++ "\tgoto " ++ lEnd ++ "\n" ++ lFalse ++ ":\n" ++ codeElse ++ "\tgoto " ++ lEnd ++ "\n" ++ lEnd ++ ":\n")
+
+genCmd tab (While cond blocoLoop) = do
+    lTeste <- novoLabel
+    lCorpo <- novoLabel
+    lEnd <- novoLabel
+
+    codeCond <- genExprL tab cond lCorpo lEnd
+    codeBloco <- genBloco tab blocoLoop
+
+    return (lTeste ++ ":\n" ++ codeCond ++ lCorpo ++ ":\n" ++ codeBloco ++ "\tgoto " ++ lTeste ++ "\n" ++ lEnd ++ ":\n")
+
+
+genCmd _ _ = return ""
+
+
+genOp :: Tipo -> String -> String
+genOp TInt    op = "\ti" ++ op ++ "\n"
+genOp TDouble op = "\td" ++ op ++ "\n"
+genOp _       op = error ("[CodeGen] Operador '" ++ op ++ "' não suportado para este tipo.")
+
+-- Gera a instrução correta para uma constante inteira.
+genInt :: Int -> String
+genInt i
+    | i == -1               = "\ticonst_m1\n"
+    | i >= 0 && i <= 5      = "\ticonst_" ++ show i ++ "\n" -- Atalho para i==0, i==1, etc.
+    | i >= -128 && i <= 127 = "\tbipush " ++ show i ++ "\n"
+    | i >= -32768 && i <= 32767 = "\tsipush " ++ show i ++ "\n"
+    | otherwise             = "\tldc " ++ show i ++ "\n"
+
+genRel :: String -> Tipo -> String -> String
+genRel op TInt labelTrue =
+    let instr = case op of
+                    "==" -> "if_icmpeq"
+                    "/=" -> "if_icmpne"
+                    "<"  -> "if_icmplt"
+                    "<=" -> "if_icmple"
+                    ">"  -> "if_icmpgt"
+                    ">=" -> "if_icmpge"
+                    _    -> error "[CodeGen] Operador relacional desconhecido."
+    in "\t" ++ instr ++ " " ++ labelTrue ++ "\n"
+
+genRel op TDouble labelTrue =
+
+    -- logica usada:
+    -- 1 se valor1 > valor2
+    -- 0 se valor1 == valor2
+    -- -1 se valor1 < valor2
+    
+    let cmp_instr = "\tdcmpg\n"
+        jump_instr = case op of
+                        "==" -> "ifeq"
+                        "/=" -> "ifne"
+                        "<"  -> "iflt"
+                        "<=" -> "ifle"
+                        ">"  -> "ifgt"
+                        ">=" -> "ifge"
+                        _    -> error "[CodeGen] Operador relacional desconhecido para Double."
+
+    in cmp_instr ++ "\t" ++ jump_instr ++" " ++ labelTrue ++ "\n"
+
+genRel op TString labelTrue | op == "==" || op == "/=" = 
+    let instr = case op of
+                    "==" -> "if_acmpeq" --'acmp' signifca 'adress compare'
+                    "/=" -> "if_acmpne"
+    in "\t" ++ instr ++ " " ++ labelTrue ++ "\n"
+genRel op TString _ = error ("[CodeGen] Operador relacional ' " ++ op ++ " ' não suportado para Strings.")
+
+-- Caso de erro para outros tipos
+genRel _ tipo _ = error ("[CodeGen] Comparações para o tipo " ++ show tipo ++ " ainda não implementadas.")
 
 -- Gera código para um bloco de comandos
 genBloco :: SymTab -> Bloco -> State Int String
-genBloco symTab comandos = do
-    codes <- mapM (genCmd symTab) comandos
-    return (concat codes)
+genBloco symTab comandos = concat <$> mapM (genCmd symTab) comandos
 
--- ... (genMainCab, genCabecalhoClasse - Nenhuma mudança necessária) ...
 genMainCab :: Int -> Int -> String
 genMainCab s l = ".method public static main([Ljava/lang/String;)V\n\t.limit stack "++show s++"\n\t.limit locals "++show l++"\n\n"
+
+genCabecalhoClasse :: [Char] -> [Char]
 genCabecalhoClasse n = ".class public "++n++"\n.super java/lang/Object\n\n.method public <init>()V\n\taload_0\n\tinvokenonvirtual java/lang/Object/<init>()V\n\treturn\n.end method\n\n"
 
 -- Gera o código para o método main
 genMain :: [Var] -> Bloco -> State Int String
 genMain varsGlobais blocoPrincipal = do
-    let nomesVars = map (\(varNome :#: _) -> varNome) varsGlobais
-    let (symTab, proxIndice) = criarTabela nomesVars 1
+    let (symTab, proxIndice) = criarTabela varsGlobais 1  -- cria a tabela de simbolos a partir da lista de [Var]
+    
     let numLocals = proxIndice
     let stackSize = 20
     let cabecalho = genMainCab stackSize numLocals
     corpo <- genBloco symTab blocoPrincipal
+
     return (cabecalho ++ corpo ++ "\treturn\n.end method\n")
 
 -- Orquestra a geração de código para o programa inteiro
@@ -148,12 +268,6 @@ genProg nomePrograma (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal)
     let cabecalhoClasse = genCabecalhoClasse nomePrograma
     mainCode <- genMain varsGlobais blocoPrincipal
 
-    -- --- TODO: Próximo Passo para genProg ---
-    -- 1. Gerar código para as funções definidas pelo usuário.
-    --    Você precisará de uma nova função 'genFuncao' e chamá-la para cada item em 'funcoesCorpos'.
-    -- funcoesCode <- mapM (genFuncao symTabGlobal) funcoesCorpos
-    -- return (cabecalhoClasse ++ mainCode ++ concat funcoesCode)
-    
     return (cabecalhoClasse ++ mainCode)
 
 -- Função principal que será chamada por Main.hs
