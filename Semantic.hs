@@ -108,13 +108,10 @@ analisaFuncaoCompleta envGlobal (fId, locals, bloco) =
             -- 1. Verificar duplicatas entre parâmetros e variáveis locais.
             verificaDuplicatas (\(pId :#: _) -> pId) params
             verificaDuplicatas (\(vId :#: _) -> vId) locals
-            let nomesParams = map (\(pId :#: _) -> pId) params
-            mapM_ (\(lId :#: _) -> when (lId `elem` nomesParams) $
-                                     errorMsg ("Variável local '" ++ lId ++ "' tem o mesmo nome de um parâmetro na função '" ++ fId ++ "'.")) locals
-
+    
             -- 2. Construir o ambiente LOCAL da função.
             let (funcoesGlobais, varsGlobais) = envGlobal
-            let envLocal = (funcoesGlobais, params ++ locals ++ varsGlobais)
+            let envLocal = (funcoesGlobais, locals ++ params ++ varsGlobais)
 
             -- 3. Analisar o bloco da função com o ambiente local.
             bloco' <- analisaBloco envLocal (Just funcao) bloco
