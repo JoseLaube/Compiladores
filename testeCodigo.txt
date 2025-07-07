@@ -1,0 +1,16 @@
+{
+    int x;
+    float y;
+    float w;
+    string palavra;
+
+    x = 2;
+    y = 3.1;
+    w = x + y;
+    palavra = "Ola mundo!";
+
+    while( ( "Ola" /= "Tchau") ){
+      x = x + 1;
+    }
+    w = -1.0;
+}

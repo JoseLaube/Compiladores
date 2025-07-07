@@ -1,1 +1,0 @@
-void saudacao(string nome){ print("Ola, "); print(nome); print("!"); } int adiciona(int x, int y) { return x + y; } { string meuNome; int val1, val2; int somaTotal; meuNome = "Mundo"; val1 = 10; val2 = 25; saudacao(meuNome); somaTotal = adiciona(val1, val2); print(somaTotal); adiciona(5,3); }
