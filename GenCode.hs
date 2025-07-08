@@ -7,6 +7,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 
 type SymTab = Map Id (Tipo, Int)   -- A symtab agora mapeia um id para uma tupla (Tipo, Indice)
+type GenEnv = ([Funcao], SymTab) -- (Lista de funcoes, tabela de simbolos)
 
 -- funcao para criar a tabela apartir da lista de varaiveis da AST, retorna a tabela e o prox indice livre
 criarTabela :: [Var] -> Int -> (SymTab, Int)
@@ -26,12 +27,12 @@ novoLabel :: State Int String
 novoLabel = do { n <- get; put (n + 1); return ("l" ++ show n) }
 
 -- gera codigo para expressoes que sobem valores para a pilha
-genExpr :: SymTab -> Expr -> State Int (Tipo, String)
-genExpr symTab (Const (CInt i))    = return (TInt, genInt i)
-genExpr symTab (Const (CDouble d)) = return (TDouble, "\tldc2_w " ++ show d ++ "\n")
-genExpr symTab (Lit s)             = return (TString, "\tldc \"" ++ s ++ "\"\n")
+genExpr :: GenEnv -> Expr -> State Int (Tipo, String)
+genExpr (_, symTab) (Const (CInt i))    = return (TInt, genInt i)
+genExpr (_, symTab) (Const (CDouble d)) = return (TDouble, "\tldc2_w " ++ show d ++ "\n")
+genExpr (_, symTab) (Lit s)             = return (TString, "\tldc \"" ++ s ++ "\"\n")
 
-genExpr symTab (IdVar nome) = 
+genExpr (_, symTab) (IdVar nome) =
     case buscarSimbolo nome symTab of
         Nothing ->
             -- erro que nao deve acontecer mas deixar a verificacao dele aqui
@@ -46,71 +47,93 @@ genExpr symTab (IdVar nome) =
         
             in return (tipo, "\t" ++ instr ++ " " ++ show indice ++ "\n") -- o retorno é o tipo da variavel e o codigo para load na pilha
 
-genExpr tab (Add e1 e2) = do
-    (t1, e1') <- genExpr tab e1
-    (t2, e2') <- genExpr tab e2
+genExpr env@(_, tab) (Add e1 e2) = do
+    (t1, e1') <- genExpr env e1
+    (t2, e2') <- genExpr env e2
     return (t1, e1' ++ e2' ++ genOp t1 "add")
 
-genExpr tab (Sub e1 e2) = do
-    (t1, e1') <- genExpr tab e1
-    (t2, e2') <- genExpr tab e2
+genExpr env@(_, tab) (Sub e1 e2) = do
+    (t1, e1') <- genExpr env e1
+    (t2, e2') <- genExpr env e2
     return (t1, e1' ++ e2' ++ genOp t1 "sub")
 
-genExpr tab (Mul e1 e2) = do
-    (t1, e1') <- genExpr tab e1
-    (t2, e2') <- genExpr tab e2
+genExpr env@(_, tab) (Mul e1 e2) = do
+    (t1, e1') <- genExpr env e1
+    (t2, e2') <- genExpr env e2
     return (t1, e1' ++ e2' ++ genOp t1 "mul")
 
-genExpr tab (Div e1 e2) = do
-    (t1, e1') <- genExpr tab e1
-    (t2, e2') <- genExpr tab e2
+genExpr env@(_, tab) (Div e1 e2) = do
+    (t1, e1') <- genExpr env e1
+    (t2, e2') <- genExpr env e2
     return (t1, e1' ++ e2' ++ genOp t1 "div")
 
-genExpr tab (Neg e) = do
-    (tipo, code) <- genExpr tab e
+genExpr env@(_, tab) (Neg e) = do
+    (tipo, code) <- genExpr env e
     return (tipo, code ++ genOp tipo "neg")
 
-genExpr tab (IntDouble e) = do
-    (_, code) <- genExpr tab e
+genExpr env@(_, tab) (IntDouble e) = do
+    (_, code) <- genExpr env e
     return (TDouble, code ++ "\ti2d\n")
 
-genExpr tab (DoubleInt e) = do
-    (_, code) <- genExpr tab e
+genExpr env@(_, tab) (DoubleInt e) = do
+    (_, code) <- genExpr env e
     return (TInt, code ++ "\td2i\n")
 
+-- Em genExpr, substitua o case para Chamada por este:
 
-genExpr _ _ = return (TVoid, ";; TODO: implementar outros casos de genExpr\n")
+genExpr env@(funcoes, _) (Chamada id args) = do
+    results <- mapM (genExpr env) args  -- Gera o código e coleta os tipos para todos os argumentos, 'results' será uma lista de tuplas [(Tipo, String)]
+    let argCode = concatMap snd results  -- Concatena todo o código dos argumentos em uma única string
+    
+    case buscarFuncaoNaLista id funcoes of
+        Nothing -> error ("[CodeGen] Função '" ++ id ++ "'chamada mas não definida")
+
+        Just(_ :->: (params, tipoRetorno)) -> do
+
+            let nomeClasse = "MeuPrograma"
+            let assinatura = geraAssinatura params tipoRetorno
+            let invokeCode = "\tinvokestatic " ++ nomeClasse ++ "/" ++ id ++ assinatura ++ "\n"
+    
+            return (tipoRetorno, argCode ++ invokeCode) -- Retorna o tipo de retorno e o código final.
+    
+
+
+buscarFuncaoNaLista :: Id -> [Funcao] -> Maybe Funcao
+buscarFuncaoNaLista _ [] = Nothing
+buscarFuncaoNaLista id (f@(fId :->: _) : fs)
+    | id == fId = Just f
+    | otherwise = buscarFuncaoNaLista id fs
 
 
 -- func que recebe a SymTab, a expressao, o label v e f
-genExprL :: SymTab -> ExprL -> String -> String -> State Int String
+genExprL :: GenEnv -> ExprL -> String -> String -> State Int String
 -- a expressao logica é uma unica expressao relacional
-genExprL tab (Rel exprR) lTrue lFalse = genExprR tab exprR lTrue lFalse
+genExprL env (Rel exprR) lTrue lFalse = genExprR env exprR lTrue lFalse
 
-genExprL tab (And e1 e2) lTrue lFalse = do
+genExprL env (And e1 e2) lTrue lFalse = do
     lMeio <- novoLabel
 
-    code1 <- genExprL tab e1 lMeio lFalse  -- gera o codigo de e1 e ve se pula pro final ou segue a avaliacao
-    code2 <- genExprL tab e2 lTrue lFalse -- o mesmo, mas aqui pode concluir que a exprL é V
+    code1 <- genExprL env e1 lMeio lFalse  -- gera o codigo de e1 e ve se pula pro final ou segue a avaliacao
+    code2 <- genExprL env e2 lTrue lFalse -- o mesmo, mas aqui pode concluir que a exprL é V
 
     return (code1 ++ lMeio ++":\n" ++ code2)
 
-genExprL tab (Or e1 e2) lTrue lFalse = do
+genExprL env (Or e1 e2) lTrue lFalse = do
     lMeio <- novoLabel
 
-    code1 <- genExprL tab e1 lTrue lMeio -- se e1 é V entao pode pular para o final, se nao devemos segir para lMeio
-    code2 <- genExprL tab e2 lTrue lFalse
+    code1 <- genExprL env e1 lTrue lMeio -- se e1 é V entao pode pular para o final, se nao devemos segir para lMeio
+    code2 <- genExprL env e2 lTrue lFalse
 
     return (code1 ++ lMeio ++ ":\n" ++ code2)
 
-genExprL tab (Not e) lTrue lFalse = 
-    genExprL tab e lFalse lTrue  -- basta inverter os saltos
+genExprL env (Not e) lTrue lFalse = 
+    genExprL env e lFalse lTrue  -- basta inverter os saltos
 
 
 
 -- Gera código para uma expressão RELACIONAL que resulta em um salto.
-genExprR :: SymTab -> ExprR -> String -> String -> State Int String
-genExprR tab exprR lTrue lFalse = do
+genExprR :: GenEnv -> ExprR -> String -> String -> State Int String
+genExprR env@(_, tab) exprR lTrue lFalse = do
     -- A lógica de gerar o código das sub-expressões é a mesma para todos.
     let (op, e1, e2) = case exprR of
                         Req a b -> ("==", a, b)
@@ -120,19 +143,19 @@ genExprR tab exprR lTrue lFalse = do
                         Rlt a b -> ("<",  a, b)
                         Rgt a b -> (">",  a, b)
     
-    (tipo1, code1) <- genExpr tab e1
-    (_,     code2) <- genExpr tab e2
+    (tipo1, code1) <- genExpr env e1
+    (_,     code2) <- genExpr env e2
 
     let relCode = genRel op tipo1 lTrue
     return (code1 ++ code2 ++ relCode ++ "\tgoto " ++ lFalse ++ "\n")
 
 
 -- Gera código para comandos
-genCmd :: SymTab -> Comando -> State Int String
-genCmd symTab (Atrib nome expr) = do
-    (_, codeExpr) <- genExpr symTab expr -- gera o codigo para a expressao do lado direito, isso deixa a expressao no topo da pilha
+genCmd :: GenEnv -> Comando -> State Int String
+genCmd env@(_, tab) (Atrib nome expr) = do
+    (_, codeExpr) <- genExpr env expr -- gera o codigo para a expressao do lado direito, isso deixa a expressao no topo da pilha
 
-    case buscarSimbolo nome symTab of
+    case buscarSimbolo nome tab of
         Nothing -> error ("[CodeGen] Erro fatal: variavel de atribuicao '"++ nome ++ "' nao encontrada")
         Just (tipo, indice) -> do
             let instr = case tipo of
@@ -142,8 +165,8 @@ genCmd symTab (Atrib nome expr) = do
                             _       -> error "[CodeGen] Atribuicao para tipo invalido!"
             return (codeExpr ++ "\t" ++ instr ++ " " ++ show indice ++ "\n")
 
-genCmd symTab (Imp expr) = do
-    (tipoExpr, codeExpr) <- genExpr symTab expr
+genCmd env@(_, tab) (Imp expr) = do
+    (tipoExpr, codeExpr) <- genExpr env expr
     let tipoJasmin = case tipoExpr of
                         TInt    -> "I"
                         TDouble -> "D"
@@ -151,39 +174,59 @@ genCmd symTab (Imp expr) = do
                         _       -> "V" -- so para casos de erros indefinidos
     return ( "\tgetstatic java/lang/System/out Ljava/io/PrintStream;\n" ++ codeExpr ++ "\tinvokevirtual java/io/PrintStream/println(" ++ tipoJasmin ++ ")V\n")
 
-genCmd tab (If cond blocoThen []) = do   -- if sem else
+genCmd env (If cond blocoThen []) = do   -- if sem else
     lTrue <- novoLabel
     lEnd <- novoLabel 
 
-    codeCond <-genExprL tab cond lTrue lEnd
-    codeThen <- genBloco tab blocoThen
+    codeCond <-genExprL env cond lTrue lEnd
+    codeThen <- genBloco env blocoThen
     return (codeCond ++ lTrue ++ ":\n" ++ codeThen ++ lEnd ++ ":\n")
 
-genCmd tab (If cond blocoThen blocoElse) = do   -- if com else
+genCmd env (If cond blocoThen blocoElse) = do   -- if com else
     lTrue <- novoLabel
     lFalse <- novoLabel
     lEnd <- novoLabel 
 
-    codeCond <- genExprL tab cond lTrue lFalse  -- gera o codigo e faz o salto se for true ou false
+    codeCond <- genExprL env cond lTrue lFalse  -- gera o codigo e faz o salto se for true ou false
 
-    codeThen <-genBloco tab blocoThen
-    codeElse <- genBloco tab blocoElse
+    codeThen <-genBloco env blocoThen
+    codeElse <- genBloco env blocoElse
 
     return (codeCond ++ lTrue ++ ":\n" ++ codeThen ++ "\tgoto " ++ lEnd ++ "\n" ++ lFalse ++ ":\n" ++ codeElse ++ "\tgoto " ++ lEnd ++ "\n" ++ lEnd ++ ":\n")
 
-genCmd tab (While cond blocoLoop) = do
+genCmd env (While cond blocoLoop) = do
     lTeste <- novoLabel
     lCorpo <- novoLabel
     lEnd <- novoLabel
 
-    codeCond <- genExprL tab cond lCorpo lEnd
-    codeBloco <- genBloco tab blocoLoop
+    codeCond <- genExprL env cond lCorpo lEnd
+    codeBloco <- genBloco env blocoLoop
 
     return (lTeste ++ ":\n" ++ codeCond ++ lCorpo ++ ":\n" ++ codeBloco ++ "\tgoto " ++ lTeste ++ "\n" ++ lEnd ++ ":\n")
 
 
-genCmd _ _ = return ""
+genCmd env (Ret maybeExpr) = do
+    case maybeExpr of
+        Nothing -> return "\treturn\n" -- retorno para funcoes do tipo void
 
+        Just expr -> do  -- caso para return <expr>
+            (tipo, codeExpr) <- genExpr env expr  -- gera o codigo para a expressao e coloca na pilha
+
+            let returnInstr = case tipo of
+                                TInt -> "ireturn"
+                                TDouble -> "dreturn"
+                                TString -> "areturn"
+                                TVoid -> "return"
+            return (codeExpr ++ "\t" ++ returnInstr ++ "\n")
+
+genCmd env (Proc id args) = do
+    -- mesma logica de Chamada para gerar o codigo
+    (tipoRetorno, codeChamada) <- genExpr env (Chamada id args)
+
+    -- se a funcao chamada retornar um valor devemos remover ela da pilha
+    let popInstr = if tipoRetorno /= TVoid then "\tpop\n" else ""
+
+    return (codeChamada ++ popInstr)
 
 genOp :: Tipo -> String -> String
 genOp TInt    op = "\ti" ++ op ++ "\n"
@@ -240,35 +283,96 @@ genRel op TString _ = error ("[CodeGen] Operador relacional ' " ++ op ++ " ' nã
 -- Caso de erro para outros tipos
 genRel _ tipo _ = error ("[CodeGen] Comparações para o tipo " ++ show tipo ++ " ainda não implementadas.")
 
--- Gera código para um bloco de comandos
-genBloco :: SymTab -> Bloco -> State Int String
-genBloco symTab comandos = concat <$> mapM (genCmd symTab) comandos
+genBloco :: GenEnv -> Bloco -> State Int String
+genBloco env comandos = concat <$> mapM (genCmd env) comandos
 
 genMainCab :: Int -> Int -> String
 genMainCab s l = ".method public static main([Ljava/lang/String;)V\n\t.limit stack "++show s++"\n\t.limit locals "++show l++"\n\n"
+
+
+
+-- Converte um tipo da nossa linguagem para o descritor de tipo da JVM.
+tipoParaJasmin :: Tipo -> String
+tipoParaJasmin TInt    = "I"
+tipoParaJasmin TDouble = "D"
+tipoParaJasmin TString = "Ljava/lang/String;"
+tipoParaJasmin TVoid   = "V"
+
+
+-- Gera a assinatura completa de um método Jasmin a partir de uma lista de parâmetros e um tipo de retorno.
+geraAssinatura :: [Var] -> Tipo -> String
+geraAssinatura params tipoRetorno = "(" ++ paramsAssinatura ++ ")" ++ retornoAssinatura
+    where
+        getTipoParam (_ :#: (t, _)) = t
+        paramsAssinatura = concatMap (tipoParaJasmin . getTipoParam) params
+        retornoAssinatura = tipoParaJasmin tipoRetorno
+
+
 
 genCabecalhoClasse :: [Char] -> [Char]
 genCabecalhoClasse n = ".class public "++n++"\n.super java/lang/Object\n\n.method public <init>()V\n\taload_0\n\tinvokenonvirtual java/lang/Object/<init>()V\n\treturn\n.end method\n\n"
 
 -- Gera o código para o método main
-genMain :: [Var] -> Bloco -> State Int String
-genMain varsGlobais blocoPrincipal = do
-    let (symTab, proxIndice) = criarTabela varsGlobais 1  -- cria a tabela de simbolos a partir da lista de [Var]
+genMain :: [Funcao] -> [Var] -> Bloco -> State Int String
+genMain listaFuncoes varsGlobais blocoPrincipal = do
+    let (symTabGlobal, proxIndice) = criarTabela varsGlobais 1  -- cria a tabela de simbolos a partir da lista de [Var]
     
-    let numLocals = proxIndice
+    let envMain = (listaFuncoes, symTabGlobal )
+
+    let numLocals = 8
     let stackSize = 20
     let cabecalho = genMainCab stackSize numLocals
-    corpo <- genBloco symTab blocoPrincipal
+    corpo <- genBloco envMain blocoPrincipal
 
     return (cabecalho ++ corpo ++ "\treturn\n.end method\n")
+
+
+-- func para gerar o codigo de uma funcao
+genFuncao :: String -> [Funcao] -> Funcao -> (Id, [Var], Bloco) -> State Int String
+genFuncao nomeClasse todasAsFuncoes (fId :->: (params, tipoRetorno)) (_, locais, bloco) = do
+    -- 1. Criar a tabela de símbolos LOCAL para esta função.
+    let (tabParams, proxIndiceParams) = criarTabela params 0
+    let (tabLocais, proxIndiceLocais) = criarTabela locais proxIndiceParams
+    let symTabLocal = Map.union tabParams tabLocais
+    let numLocals = 8
+
+    let envFuncao = (todasAsFuncoes, symTabLocal)
+
+    -- 2. Construir o cabeçalho do método.
+    let assinatura = geraAssinatura params tipoRetorno
+    let cabecalho = "\n.method public static " ++ fId ++ assinatura ++ "\n"
+                ++ "\t.limit stack 20\n"
+                ++ "\t.limit locals " ++ show numLocals ++ "\n\n"
+
+    -- 3. Gerar o código do corpo da função.
+    corpoCode <- genBloco envFuncao bloco
+
+    -- 4. Adicionar o 'return' default (necessário se não houver um explícito).
+    -- A JVM exige que todo caminho de código termine com uma instrução de retorno.
+    let finalReturn = case tipoRetorno of
+                        TVoid -> "\treturn\n"
+                        _     -> "" -- Assumimos que a função terá um 'Ret' explícito.
+    
+    -- 5. Montar o método completo.
+    return (cabecalho ++ corpoCode ++ finalReturn ++ ".end method\n")
+
+
 
 -- Orquestra a geração de código para o programa inteiro
 genProg :: String -> Programa -> State Int String
 genProg nomePrograma (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
     let cabecalhoClasse = genCabecalhoClasse nomePrograma
-    mainCode <- genMain varsGlobais blocoPrincipal
+    
+    -- Gera o código do main
+    mainCode <- genMain funcoesDefs varsGlobais blocoPrincipal
 
-    return (cabecalhoClasse ++ mainCode)
+    -- Gera o código para todas as outras funções
+    -- 'zip' junta a lista de assinaturas com a lista de corpos
+    let funcoesCompletas = zip funcoesDefs funcoesCorpos
+    funcoesCodeList <- mapM (\(fDef, fCorpo) -> genFuncao nomePrograma funcoesDefs fDef fCorpo) funcoesCompletas
+    let funcoesCode = concat funcoesCodeList
+
+    return (cabecalhoClasse ++ mainCode ++ funcoesCode)
 
 -- Função principal que será chamada por Main.hs
 gerar :: String -> Programa -> String

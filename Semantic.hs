@@ -250,24 +250,38 @@ analisaComando env maybeFuncao cmd = case cmd of
     _ -> pure cmd
 
 
--- | Analisa e aplica coerção aos argumentos de uma chamada de função.
+-- Analisa e aplica coerção aos argumentos de uma chamada de função.
 analisaArgumentos :: Env -> [Var] -> [Expr] -> Result [Expr]
-analisaArgumentos env params args = do
-    -- Primeiro, verifica a aridade
-    if length args /= length params then do
-        errorMsg ("Numero incorreto de argumentos. Esperado: " ++ show (length params) ++ ", fornecido: " ++ show (length args) ++ ".")
-        -- Analisa os argumentos mesmo assim para encontrar outros errorMsgs
-        mapM (fmap snd . analisaExpr env) args
-    else do
-        -- 'zipWithM' itera sobre argumentos e parâmetros, aplicando a análise a cada par.
-        let analisaPar p a = analisaComando env Nothing (Atrib (getId p) a) >>= \(Atrib _ a') -> pure a'
-              where getId (id :#: _) = id
-        
-        -- Truque inteligente: Reutilizamos a lógica de 'Atrib' para fazer a coerção!
-        -- Criamos um ambiente temporário apenas com o parâmetro e "atribuímos" o argumento a ele.
-        zipWithM (\p a -> analisaComando ([], [p]) Nothing (Atrib (getId p) a) >>= \(Atrib _ a') -> pure a') params args
-          where getId (id :#: _) = id
+analisaArgumentos ambienteDoChamador parametrosDaFuncao argumentosDaChamada = do
+    
+    -- Primeiro, verifica se o número de argumentos corresponde ao número de parâmetros.
+    if length argumentosDaChamada /= length parametrosDaFuncao
+    then do
+        errorMsg ("Numero incorreto de argumentos. Esperado: " ++ show (length parametrosDaFuncao) ++ ", fornecido: " ++ show (length argumentosDaChamada) ++ ".")
+        -- Analisa os argumentos mesmo assim para encontrar outros erros, usando o ambiente do chamador.
+        mapM (fmap snd . analisaExpr ambienteDoChamador) argumentosDaChamada
+    
+    else
+        -- 'zipWithM' itera sobre cada par (parâmetro, argumento) e aplica a análise.
+        zipWithM analisaPar parametrosDaFuncao argumentosDaChamada
 
+  where
+    -- Função auxiliar para analisar um único par (parâmetro, argumento).
+    analisaPar :: Var -> Expr -> Result Expr
+    analisaPar parametro argumento = do
+        -- Para verificar o tipo e a coerção, simulamos uma atribuição do argumento ao parâmetro.
+        -- Para isso, precisamos de um ambiente temporário onde tanto as variáveis do chamador
+        -- quanto o parâmetro de destino sejam visíveis.
+        let (funcoes, varsDoChamador) = ambienteDoChamador
+        let ambienteTemporario = (funcoes, parametro : varsDoChamador)
+        
+        -- Reutilizamos a lógica de 'analisaComando' para a atribuição.
+        -- O resultado é a AST do argumento, possivelmente modificada com nós de coerção.
+        analisaComando ambienteTemporario Nothing (Atrib (getId parametro) argumento) >>= \(Atrib _ argumentoModificado) -> pure argumentoModificado
+
+    -- Função auxiliar para extrair o Id de uma Var.
+    getId :: Var -> Id
+    getId (id :#: _) = id
 
 
 -- Analisa uma expressão
