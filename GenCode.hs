@@ -79,8 +79,6 @@ genExpr env@(_, tab) (DoubleInt e) = do
     (_, code) <- genExpr env e
     return (TInt, code ++ "\td2i\n")
 
--- Em genExpr, substitua o case para Chamada por este:
-
 genExpr env@(funcoes, _) (Chamada id args) = do
     results <- mapM (genExpr env) args  -- Gera o código e coleta os tipos para todos os argumentos, 'results' será uma lista de tuplas [(Tipo, String)]
     let argCode = concatMap snd results  -- Concatena todo o código dos argumentos em uma única string
@@ -150,7 +148,6 @@ genExprR env@(_, tab) exprR lTrue lFalse = do
     return (code1 ++ code2 ++ relCode ++ "\tgoto " ++ lFalse ++ "\n")
 
 
--- Gera código para comandos
 genCmd :: GenEnv -> Comando -> State Int String
 genCmd env@(_, tab) (Atrib nome expr) = do
     (_, codeExpr) <- genExpr env expr -- gera o codigo para a expressao do lado direito, isso deixa a expressao no topo da pilha
@@ -220,11 +217,9 @@ genCmd env (Ret maybeExpr) = do
             return (codeExpr ++ "\t" ++ returnInstr ++ "\n")
 
 genCmd env (Proc id args) = do
-    -- mesma logica de Chamada para gerar o codigo
-    (tipoRetorno, codeChamada) <- genExpr env (Chamada id args)
-
-    -- se a funcao chamada retornar um valor devemos remover ela da pilha
-    let popInstr = if tipoRetorno /= TVoid then "\tpop\n" else ""
+    (tipoRetorno, codeChamada) <- genExpr env (Chamada id args)  -- mesma logica de Chamada para gerar o codigo
+    let popInstr = if tipoRetorno /= TVoid then "\tpop\n" else "" -- se a funcao chamada retornar um valor devemos remover ela da pilha
+    
 
     return (codeChamada ++ popInstr)
 

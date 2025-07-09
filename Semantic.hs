@@ -3,7 +3,6 @@ module Semantic where
 import Ri   
 import Control.Monad (when, zipWithM)
 
---- A Mônada Result, conforme especificado pelo professor.
 data Result a = Result (Bool, String, a) deriving Show
 
 instance Functor Result where
@@ -16,7 +15,6 @@ instance Applicative Result where
 instance Monad Result where
   Result (b, s, a) >>= f = let Result (b', s', a') = f a in Result (b || b', s++s', a')
 
--- Novas funções para emitir mensagens.
 errorMsg :: String -> Result ()
 errorMsg s = Result (True, "Erro: " ++ s ++ "\n", ())
 
@@ -46,41 +44,29 @@ buscarFuncao id ((fun@(fId :->: _)) : fs, vars) =
 verificaDuplicatas :: (Eq a, Show a) => (b -> a) -> [b] -> Result ()
 verificaDuplicatas extrairNome lista = go lista []
   where
-    -- 'go' é uma função auxiliar que faz o trabalho pesado.
-    -- O primeiro argumento é a lista que falta verificar.
-    -- O segundo argumento é a lista de nomes que já vimos.
     go [] _ = pure () -- Caso base: se a lista a verificar está vazia, terminamos sem errorMsgs.
-    
+
     go (itemAtual : restoDaLista) nomesVistos = do
         let nomeAtual = extrairNome itemAtual
 
-        -- Verifica se o nome extraído já está na lista de nomes vistos
-        if nomeAtual `elem` nomesVistos
-            -- Se já vimos, emite um errorMsg e para.
+        if nomeAtual `elem` nomesVistos -- Verifica se o nome extraído já está na lista de nomes vistos
+        
             then errorMsg ("Identificador duplicado encontrado: " ++ show nomeAtual)
-            -- Se não, continua a verificação recursivamente.
             else go restoDaLista (nomeAtual : nomesVistos)
-                -- Continua com o resto da lista...
-                -- ...e adiciona o nome atual à lista de nomes vistos para as próximas verificações.
+    
 
 analisa :: Programa -> Result Programa
 analisa (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
-    -- Passo 1: Verificar se há funções ou variáveis globais duplicadas.
+    
     verificaDuplicatas (\(fId :->:_) -> fId) funcoesDefs
     verificaDuplicatas (\(vId :#: _) -> vId) varsGlobais
     
-    -- Passo 2: Construir o ambiente inicial.
-    -- Todas as funções são visíveis em todos os lugares.
-    let envGlobal = (funcoesDefs, varsGlobais)
-
-    -- Passo 3: Analisar o bloco principal do programa.
-    -- O 'Nothing' indica que não estamos dentro de uma função (importante para o 'return').
-    blocoPrincipal' <- analisaBloco envGlobal Nothing blocoPrincipal
+    let envGlobal = (funcoesDefs, varsGlobais) -- Todas as funções são visíveis em todos os lugares.
     
-    -- Passo 4: Analisar o corpo de cada função definida
-    funcoesCorpos' <- mapM (analisaFuncaoCompleta envGlobal) funcoesCorpos
+    blocoPrincipal' <- analisaBloco envGlobal Nothing blocoPrincipal -- O 'Nothing' indica que não estamos dentro de uma função (importante para o 'return').
     
-    -- Por enquanto, retornamos uma AST parcialmente processada.
+    funcoesCorpos' <- mapM (analisaFuncaoCompleta envGlobal) funcoesCorpos -- Analisar o corpo de cada função definida
+    
     pure (Prog funcoesDefs funcoesCorpos' varsGlobais blocoPrincipal')
 
 
@@ -89,12 +75,10 @@ analisa (Prog funcoesDefs funcoesCorpos varsGlobais blocoPrincipal) = do
 analisaBloco :: Env -> Maybe Funcao -> Bloco -> Result Bloco
 analisaBloco _ _ [] = pure [] -- Bloco vazio está sempre correto.
 analisaBloco env maybeFuncao (cmd:cmds) = do
-    -- Analisa o primeiro comando
-    cmd' <- analisaComando env maybeFuncao cmd
-    -- Analisa o resto do bloco
-    cmds' <- analisaBloco env maybeFuncao cmds
-    -- Retorna o novo bloco com os comandos analisados
-    pure (cmd' : cmds')
+
+    cmd' <- analisaComando env maybeFuncao cmd -- Analisa o primeiro comando
+    cmds' <- analisaBloco env maybeFuncao cmds -- Analisa o resto do bloco
+    pure (cmd' : cmds') -- Retorna o novo bloco com os comandos analisados
 
 analisaFuncaoCompleta :: Env -> (Id, [Var], Bloco) -> Result (Id, [Var], Bloco)
 analisaFuncaoCompleta envGlobal (fId, locals, bloco) =
@@ -105,23 +89,21 @@ analisaFuncaoCompleta envGlobal (fId, locals, bloco) =
             pure (fId, locals, bloco)
 
         Just (funcao@(_ :->: (params, _))) -> do
-            -- 1. Verificar duplicatas entre parâmetros e variáveis locais.
+            -- Verificar duplicatas entre parâmetros e variáveis locais.
             verificaDuplicatas (\(pId :#: _) -> pId) params
             verificaDuplicatas (\(vId :#: _) -> vId) locals
     
-            -- 2. Construir o ambiente LOCAL da função.
+            -- Construir o ambiente LOCAL da função.
             let (funcoesGlobais, varsGlobais) = envGlobal
             let envLocal = (funcoesGlobais, locals ++ params ++ varsGlobais)
 
-            -- 3. Analisar o bloco da função com o ambiente local.
+            -- Analisar o bloco da função com o ambiente local.
             bloco' <- analisaBloco envLocal (Just funcao) bloco
 
-            -- 4. Retorna a nova tupla representando o corpo da função analisada.
+            -- Retorna a nova tupla representando o corpo da função analisada.
             pure (fId, locals, bloco')
 
 
-
--- Substitua sua função 'coercao' por esta:
 coercao :: String -> Expr -> Expr -> Tipo -> Tipo -> Result (Tipo, Expr, Expr)
 coercao opStr e1 e2 t1 t2
   | t1 == t2 && (t1 == TInt || t1 == TDouble) = return (t1, e1, e2)
@@ -132,16 +114,14 @@ coercao opStr e1 e2 t1 t2
                  "operandos dos tipos " ++ show t1 ++ " e " ++ show t2 ++ "."
       return (TVoid, e1, e2) -- Retorna tipo de erro
 
--- Analisa um único comando
+
 analisaComando :: Env -> Maybe Funcao -> Comando -> Result Comando
 analisaComando env maybeFuncao cmd = case cmd of
     
     -- comando print(expr)
     Imp expr -> do
-        -- warningMsg "Comando 'print' encontrado."
-        (_, expr') <- analisaExpr env expr
-        -- Retorna o comando Imp com a expressão analisada.
-        pure (Imp expr')
+        (_, expr') <- analisaExpr env expr  -- warningMsg "Comando 'print' encontrado."
+        pure (Imp expr')  -- Retorna o comando Imp com a expressão analisada.
     
     -- Comando 'id = expr;'
     Atrib id expr -> do
@@ -191,15 +171,13 @@ analisaComando env maybeFuncao cmd = case cmd of
 
 
     If cond blocoThen blocoElse -> do
-        -- Analisamos a condicao, que deve ser uma expressao logica, exemplo (12 == 90)
-        cond' <- analisaExprL env cond
+        cond' <- analisaExprL env cond  -- Analisamos a condicao, que deve ser uma expressao logica, exemplo (12 == 90)
 
         -- Analisamos os blocos de comandos como de costume
         blocoThen' <- analisaBloco env maybeFuncao blocoThen
         blocoElse' <- analisaBloco env maybeFuncao blocoElse
 
-        -- Retorna o comando If com a condição e os blocos analisados
-        pure (If cond' blocoThen' blocoElse')
+        pure (If cond' blocoThen' blocoElse') -- Retorna o comando If com a condição e os blocos analisados
 
     While cond bloco -> do
         -- Mesma lógica do If
@@ -270,12 +248,9 @@ analisaArgumentos ambienteDoChamador parametrosDaFuncao argumentosDaChamada = do
     analisaPar :: Var -> Expr -> Result Expr
     analisaPar parametro argumento = do
         -- Para verificar o tipo e a coerção, simulamos uma atribuição do argumento ao parâmetro.
-        -- Para isso, precisamos de um ambiente temporário onde tanto as variáveis do chamador
-        -- quanto o parâmetro de destino sejam visíveis.
         let (funcoes, varsDoChamador) = ambienteDoChamador
         let ambienteTemporario = (funcoes, parametro : varsDoChamador)
         
-        -- Reutilizamos a lógica de 'analisaComando' para a atribuição.
         -- O resultado é a AST do argumento, possivelmente modificada com nós de coerção.
         analisaComando ambienteTemporario Nothing (Atrib (getId parametro) argumento) >>= \(Atrib _ argumentoModificado) -> pure argumentoModificado
 
@@ -284,7 +259,7 @@ analisaArgumentos ambienteDoChamador parametrosDaFuncao argumentosDaChamada = do
     getId (id :#: _) = id
 
 
--- Analisa uma expressão
+
 analisaExpr :: Env ->  Expr -> Result (Tipo, Expr)
 analisaExpr env expr = case expr of
     
@@ -292,23 +267,16 @@ analisaExpr env expr = case expr of
 
     -- Se for uma constante, retornamos o tipo e a expressão.
     Const (CInt n) -> do
-        -- Qual o tipo de um inteiro?
-        -- A AST precisa ser modificada? Não.
-        -- Use 'pure' para retornar o resultado.
         pure (TInt, Const (CInt n))
 
     -- Ex: 12.2123
     Const (CDouble d) -> do
-        -- Qual o tipo de um double?
-        -- A AST precisa ser modificada? Não.
-        -- Use 'pure' para retornar o resultado.
         pure (TDouble, Const (CDouble d))
 
     -- Um literal string como "jose lindo"
     Lit s -> do
         pure(TString, Lit s)
 
-    
     -- varaivel tipo 'contador'
     IdVar id -> case buscarVar id env of
         Just tipo -> pure (tipo, IdVar id)
@@ -318,18 +286,17 @@ analisaExpr env expr = case expr of
 
     -- CASOS RECURSIVOS
     Neg e -> do
-        -- 1. Analise recursiva da expressão 'e'
+        -- Analise recursiva da expressão 'e'
         (tipoSubExpr, novaSubExpr) <- analisaExpr env e
 
-        -- 2. Verifica se o tipo é compatível com a negação (so nao é valida se for string)
+        -- Verifica se o tipo é compatível com a negação (so nao é valida se for string)
         if tipoSubExpr == TString
             then do
                 errorMsg("Nao se pode negar uma expressao do tipo String.")
                 pure (TVoid, Neg novaSubExpr) -- Retorna TVoid em caso de errorMsg
             else
-                -- 3. Retorna o tipo e a nova expressão (Negar um Double retorna um double)
+                -- Retorna o tipo e a nova expressão (Negar um Double retorna um double)
                 pure (tipoSubExpr, Neg novaSubExpr)
-
 
     Add e1 e2 -> do
         (t1, e1') <- analisaExpr env e1
@@ -367,7 +334,7 @@ analisaExpr env expr = case expr of
             pure (tipoRetorno, Chamada id novosArgs)
 
     
-    _ -> pure(TVoid, expr) -- placeholder generico
+    _ -> pure(TVoid, expr)
 
 
 
@@ -392,8 +359,6 @@ analisaExprR env exprR = case exprR of
 
 
 
-
--- Analisa uma expressão lógica
 analisaExprL :: Env -> ExprL -> Result ExprL
 analisaExprL env exprL = case exprL of
     -- Caso base: uma expressao logica que é, na vv, uma relacional
